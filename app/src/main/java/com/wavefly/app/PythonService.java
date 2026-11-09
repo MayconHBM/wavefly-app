@@ -100,13 +100,14 @@ public class PythonService extends Service {
 
     private void boot() {
         try {
+            status = "Iniciando o Python…";
+            if (!Python.isStarted()) {
+                Python.start(new AndroidPlatform(this));
+            }
             status = "Preparando o conversor de áudio…";
             String[] ff = FfmpegSetup.prepare(this);
             if (ff != null && ff.length > 2) ffmpegInfo = ff[2];
             status = "Iniciando o WaveFly…";
-            if (!Python.isStarted()) {
-                Python.start(new AndroidPlatform(this));
-            }
             PyObject mod = Python.getInstance().getModule("app_entry");
             PyObject r = mod.callAttr("start",
                     getFilesDir().getAbsolutePath(),

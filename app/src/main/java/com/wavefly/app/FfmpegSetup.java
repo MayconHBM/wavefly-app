@@ -40,21 +40,34 @@ final class FfmpegSetup {
             } catch (Exception ignored) {
             }
 
-            // As bibliotecas do ffmpeg vêm num zip dentro do APK: descompacta uma vez por versão.
+            // As bibliotecas vêm em zips dentro do APK. O Python do app descompacta (ele entende links).
+            String resumo = "";
             if (!(marker.exists() && versao.equals(readText(marker)))) {
                 deleteRecursive(root);
                 root.mkdirs();
+                com.chaquo.python.PyObject app = com.chaquo.python.Python.getInstance().getModule("app_entry");
                 File[] libs = nativeDir.listFiles();
                 if (libs != null) {
-                    for (File f : libs) {
+                    java.util.Arrays.sort(libs);
+                    StringBuilder rs = new StringBuilder();
+                    for (File f : libs) {          // primeiro os do ffmpeg, depois os do python
                         String n = f.getName();
-                        if (n.endsWith(".zip.so") && (n.contains("ffmpeg") || n.contains("python"))) {
-                            unzip(f, root, !n.contains("ffmpeg"));
+                        if (n.endsWith(".zip.so") && n.contains("ffmpeg")) {
+                            rs.append(app.callAttr("extrair", f.getAbsolutePath(), root.getAbsolutePath(), false, false)).append("; ");
                         }
                     }
+                    for (File f : libs) {
+                        String n = f.getName();
+                        if (n.endsWith(".zip.so") && n.contains("python")) {
+                            rs.append(app.callAttr("extrair", f.getAbsolutePath(), root.getAbsolutePath(), true, true)).append("; ");
+                        }
+                    }
+                    resumo = rs.toString();
                 }
                 writeText(marker, versao);
             }
+            String suspeitos = com.chaquo.python.Python.getInstance().getModule("app_entry")
+                    .callAttr("verificar", root.getAbsolutePath()).toString();
 
             // Os executáveis ficam na pasta nativa (único lugar onde o Android deixa executar).
             File exe = new File(nativeDir, "libffmpeg.so");
@@ -79,6 +92,9 @@ final class FfmpegSetup {
                 ld.append(d);
             }
             String teste = selfTest(new File(bin, "ffmpeg"), ld.toString());
+            if (!teste.toLowerCase().startsWith("ffmpeg version") && !suspeitos.isEmpty()) {
+                teste = teste + " [SUSPEITOS: " + suspeitos + "]";
+            }
             Log.i(TAG, "teste ffmpeg: " + teste);
             return new String[]{bin.getAbsolutePath(), ld.toString(), teste};
         } catch (Throwable t) {
@@ -109,44 +125,6 @@ final class FfmpegSetup {
             return t.replace("\n", " | ") + " [LD=" + ld + "]";
         } catch (Throwable t) {
             return "ERRO: " + t;
-        }
-    }
-
-    private static void unzip(File zip, File dest, boolean soSomente) throws IOException {
-        String destPath = dest.getCanonicalPath() + File.separator;
-        try (ZipInputStream in = new ZipInputStream(new FileInputStream(zip))) {
-            ZipEntry e;
-            byte[] buf = new byte[65536];
-            while ((e = in.getNextEntry()) != null) {
-                if (soSomente && !e.getName().matches("(?:\\./)?usr/lib/[^/]+\\.so[^/]*")) continue;
-                File out = new File(dest, e.getName());
-                if (!out.getCanonicalPath().startsWith(destPath)) continue; // protege contra zip-slip
-                if (e.isDirectory()) {
-                    out.mkdirs();
-                    continue;
-                }
-                File parent = out.getParentFile();
-                if (parent != null) parent.mkdirs();
-                try (OutputStream os = new FileOutputStream(out)) {
-                    int n;
-                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
-                }
-                out.setReadable(true, false);
-                out.setExecutable(true, false);
-                // No zip, "libX.so.61" é um atalho (link). Aqui ele sai como um arquivo pequeno
-                // com o nome do alvo dentro; recria como link de verdade.
-                if (out.length() < 200 && out.getName().contains(".so")) {
-                    String alvo = readText(out);
-                    if (alvo.matches("[A-Za-z0-9._+\\-/]+") && !alvo.equals(out.getName())) {
-                        out.delete();
-                        try {
-                            android.system.Os.symlink(alvo, out.getAbsolutePath());
-                        } catch (Exception ex) {
-                            Log.e(TAG, "symlink " + out + " -> " + alvo, ex);
-                        }
-                    }
-                }
-            }
         }
     }
 

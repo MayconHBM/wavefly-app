@@ -62,6 +62,8 @@ jobs:
           cd /tmp && LAAR=$(find ~/.gradle/caches -name "library-0.18.1.aar" | head -1); echo "LAAR=$LAAR"
           mkdir -p /tmp/lib && cd /tmp/lib && unzip -o -q "$LAAR" && ls jni/arm64-v8a | tr '\n' ',' | xargs -I{} echo "::notice title=library-jni::{}"
           for Z in jni/arm64-v8a/*.zip.so; do unzip -o -q "$Z" -d /tmp/ff/z; done
+          Z1=$(zipinfo -v /tmp/ff/jni/arm64-v8a/libffmpeg.zip.so 2>/dev/null | grep -c . ); ZI=$(zipinfo /tmp/ff/jni/arm64-v8a/libffmpeg.zip.so | grep -i "libz\.so" | awk '{print $1" "$4" "$9}' | tr '\n' ';'); echo "::notice title=zip-libz-ffmpeg::${ZI}"
+          ZP=$(zipinfo /tmp/lib/jni/arm64-v8a/libpython.zip.so | grep -i "libz\.so" | awk '{print $1" "$4" "$9}' | tr '\n' ';'); echo "::notice title=zip-libz-python::${ZP}"
           cd /tmp/ff
           ZL=$(find . -type f | sed 's/^\.\///' | tr '\n' ',')
           echo "::notice title=ffmpeg-zip::${ZL}"

@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Ponte entre o app Android (Java) e o servidor WaveFly (Python)."""
 import os
+import re
+import shutil
+import stat
 import sys
 import threading
 import time
@@ -80,3 +83,57 @@ def cancelar_tudo():
         w.acao({"acao": "cancelar_tudo"})
     except Exception:
         pass
+
+
+def extrair(zip_path, dest, so_somente, nao_sobrescrever):
+    """Descompacta um zip respeitando links simbólicos. Devolve um resumo."""
+    import zipfile
+    dest = os.path.abspath(dest)
+    os.makedirs(dest, exist_ok=True)
+    arqs = links = pulados = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for zi in z.infolist():
+            nome = zi.filename[2:] if zi.filename.startswith("./") else zi.filename
+            if so_somente and not re.fullmatch(r"usr/lib/[^/]+\.so[^/]*", nome):
+                continue
+            alvo = os.path.abspath(os.path.join(dest, nome))
+            if not alvo.startswith(dest + os.sep):
+                continue
+            if zi.is_dir():
+                os.makedirs(alvo, exist_ok=True)
+                continue
+            os.makedirs(os.path.dirname(alvo), exist_ok=True)
+            if nao_sobrescrever and os.path.lexists(alvo):
+                pulados += 1
+                continue
+            modo = (zi.external_attr >> 16) & 0xFFFF
+            if os.path.lexists(alvo):
+                os.remove(alvo)
+            if stat.S_ISLNK(modo):
+                destino = z.read(zi).decode("utf-8", "ignore").strip()
+                if not destino or os.path.basename(destino) == os.path.basename(alvo):
+                    pulados += 1
+                    continue
+                os.symlink(destino, alvo)
+                links += 1
+            else:
+                with z.open(zi) as src, open(alvo, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                os.chmod(alvo, 0o755)
+                arqs += 1
+    return "%d arquivos, %d links, %d pulados" % (arqs, links, pulados)
+
+
+def verificar(raiz):
+    """Lista bibliotecas suspeitas: arquivos minúsculos ou links quebrados."""
+    ruins = []
+    for pasta, _, nomes in os.walk(raiz):
+        for n in nomes:
+            if ".so" not in n:
+                continue
+            c = os.path.join(pasta, n)
+            if os.path.islink(c) and not os.path.exists(c):
+                ruins.append(n + "(link quebrado)")
+            elif os.path.isfile(c) and os.path.getsize(c) < 1000:
+                ruins.append("%s(%d bytes)" % (n, os.path.getsize(c)))
+    return ", ".join(ruins[:12])
