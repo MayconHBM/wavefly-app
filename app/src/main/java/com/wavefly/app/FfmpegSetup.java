@@ -94,14 +94,17 @@ final class FfmpegSetup {
             Process p = pb.start();
             StringBuilder sb = new StringBuilder();
             try (InputStream in = p.getInputStream()) {
-                byte[] buf = new byte[512];
-                int n = in.read(buf);
-                if (n > 0) sb.append(new String(buf, 0, n, "UTF-8"));
+                byte[] buf = new byte[1500];
+                int n;
+                while (sb.length() < 1500 && (n = in.read(buf)) > 0) sb.append(new String(buf, 0, n, "UTF-8"));
             }
             p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
             String t = sb.toString().trim();
-            int nl = t.indexOf('\n');
-            return nl > 0 ? t.substring(0, nl) : t;
+            if (t.toLowerCase().startsWith("ffmpeg version")) {
+                int nl = t.indexOf('\n');
+                return nl > 0 ? t.substring(0, nl) : t;
+            }
+            return t.replace("\n", " | ") + " [LD=" + ld + "]";
         } catch (Throwable t) {
             return "ERRO: " + t;
         }

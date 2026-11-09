@@ -41,6 +41,16 @@ jobs:
           name: WaveFly-apk
           path: app/build/outputs/apk/debug/*.apk
 
+      - name: Relatório do ffmpeg
+        run: |
+          AAR=$(find ~/.gradle/caches -name "ffmpeg-*.aar" | head -1)
+          mkdir -p /tmp/ff && cd /tmp/ff && unzip -o -q "$AAR" && cp jni/arm64-v8a/libffmpeg.so . 2>/dev/null
+          NEED=$(readelf -d jni/arm64-v8a/libffmpeg.so 2>&1 | grep -i "NEEDED\|RPATH\|RUNPATH" | sed 's/.*\[\(.*\)\]/\1/' | tr '\n' ',')
+          echo "::notice title=ffmpeg-needed::${NEED}"
+          mkdir -p z && cd z && unzip -o -q ../jni/arm64-v8a/libffmpeg.zip.so
+          ZL=$(find . -type f | sed 's/^\.\///' | tr '\n' ',')
+          echo "::notice title=ffmpeg-zip::${ZL}"
+
       - name: Publicar APK para baixar direto
         env:
           GH_TOKEN: ${{ github.token }}
