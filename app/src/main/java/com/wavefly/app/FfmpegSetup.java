@@ -130,6 +130,19 @@ final class FfmpegSetup {
                 }
                 out.setReadable(true, false);
                 out.setExecutable(true, false);
+                // No zip, "libX.so.61" é um atalho (link). Aqui ele sai como um arquivo pequeno
+                // com o nome do alvo dentro; recria como link de verdade.
+                if (out.length() < 200 && out.getName().contains(".so")) {
+                    String alvo = readText(out);
+                    if (alvo.matches("[A-Za-z0-9._+\\-/]+") && !alvo.equals(out.getName())) {
+                        out.delete();
+                        try {
+                            android.system.Os.symlink(alvo, out.getAbsolutePath());
+                        } catch (Exception ex) {
+                            Log.e(TAG, "symlink " + out + " -> " + alvo, ex);
+                        }
+                    }
+                }
             }
         }
     }
