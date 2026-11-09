@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,3 +40,10 @@ jobs:
         with:
           name: WaveFly-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Publicar APK para baixar direto
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk WaveFly.apk
+          gh release create "v1.${{ github.run_number }}" WaveFly.apk --title "WaveFly v1.${{ github.run_number }}" --notes "APK do WaveFly" --latest
