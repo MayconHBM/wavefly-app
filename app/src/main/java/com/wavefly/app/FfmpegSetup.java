@@ -26,7 +26,7 @@ final class FfmpegSetup {
 
     private FfmpegSetup() {}
 
-    /** Devolve {pastaBin, caminhoLibs} ou null se não achou o ffmpeg. */
+    /** Devolve {pastaBin, caminhoLibs, resultadoDoTeste} ou null se não achou o ffmpeg. */
     static String[] prepare(Context ctx) {
         try {
             File nativeDir = new File(ctx.getApplicationInfo().nativeLibraryDir);
@@ -40,34 +40,32 @@ final class FfmpegSetup {
             } catch (Exception ignored) {
             }
 
-            boolean pronto = marker.exists() && versao.equals(readText(marker)) && new File(bin, "ffmpeg").canExecute();
-            if (!pronto) {
+            // As bibliotecas do ffmpeg vêm num zip dentro do APK: descompacta uma vez por versão.
+            if (!(marker.exists() && versao.equals(readText(marker)))) {
                 deleteRecursive(root);
-                deleteRecursive(bin);
                 root.mkdirs();
-                bin.mkdirs();
                 File[] libs = nativeDir.listFiles();
                 if (libs != null) {
                     for (File f : libs) {
                         String n = f.getName();
-                        if (n.contains("ffmpeg") && n.endsWith(".zip.so")) {
-                            unzip(f, root);
-                        }
+                        if (n.contains("ffmpeg") && n.endsWith(".zip.so")) unzip(f, root);
                     }
                 }
-                File exe = find(root, "libffmpeg.so");
-                if (exe == null) {
-                    File direto = new File(nativeDir, "libffmpeg.so");
-                    if (direto.exists()) exe = direto;
-                }
-                if (exe == null) {
-                    Log.e(TAG, "ffmpeg não encontrado no APK");
-                    return null;
-                }
-                copy(exe, new File(bin, "ffmpeg"));
-                File probe = find(root, "libffprobe.so");
-                if (probe != null) copy(probe, new File(bin, "ffprobe"));
                 writeText(marker, versao);
+            }
+
+            // Os executáveis ficam na pasta nativa (único lugar onde o Android deixa executar).
+            File exe = new File(nativeDir, "libffmpeg.so");
+            File probe = new File(nativeDir, "libffprobe.so");
+            if (!exe.exists()) {
+                Log.e(TAG, "libffmpeg.so não está em " + nativeDir);
+                return null;
+            }
+            deleteRecursive(bin);
+            bin.mkdirs();
+            android.system.Os.symlink(exe.getAbsolutePath(), new File(bin, "ffmpeg").getAbsolutePath());
+            if (probe.exists()) {
+                android.system.Os.symlink(probe.getAbsolutePath(), new File(bin, "ffprobe").getAbsolutePath());
             }
 
             Set<String> dirs = new LinkedHashSet<>();
@@ -78,10 +76,34 @@ final class FfmpegSetup {
                 if (ld.length() > 0) ld.append(':');
                 ld.append(d);
             }
-            return new String[]{bin.getAbsolutePath(), ld.toString()};
+            String teste = selfTest(new File(bin, "ffmpeg"), ld.toString());
+            Log.i(TAG, "teste ffmpeg: " + teste);
+            return new String[]{bin.getAbsolutePath(), ld.toString(), teste};
         } catch (Throwable t) {
             Log.e(TAG, "Falha preparando ffmpeg", t);
-            return null;
+            return new String[]{"", "", "ERRO: " + t};
+        }
+    }
+
+    /** Roda "ffmpeg -version" e devolve a primeira linha (ou o erro). */
+    private static String selfTest(File ffmpeg, String ld) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(ffmpeg.getAbsolutePath(), "-version");
+            pb.environment().put("LD_LIBRARY_PATH", ld);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            StringBuilder sb = new StringBuilder();
+            try (InputStream in = p.getInputStream()) {
+                byte[] buf = new byte[512];
+                int n = in.read(buf);
+                if (n > 0) sb.append(new String(buf, 0, n, "UTF-8"));
+            }
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            String t = sb.toString().trim();
+            int nl = t.indexOf('\n');
+            return nl > 0 ? t.substring(0, nl) : t;
+        } catch (Throwable t) {
+            return "ERRO: " + t;
         }
     }
 

@@ -23,6 +23,7 @@ def start(data_dir, ffmpeg_bin, ffmpeg_lib, port):
         os.environ["HOME"] = data_dir
         os.environ["TMPDIR"] = tmp
         if ffmpeg_bin:
+            os.environ["WAVEFLY_FFMPEG"] = ffmpeg_bin
             os.environ["PATH"] = ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
         if ffmpeg_lib:
             antigo = os.environ.get("LD_LIBRARY_PATH", "")
@@ -51,3 +52,31 @@ def start(data_dir, ffmpeg_bin, ffmpeg_lib, port):
         return "O servidor do WaveFly demorou demais para responder."
     except BaseException:
         return traceback.format_exc()
+
+
+def resumo():
+    """Texto curto com o estado da fila: 'baixando|na_fila|total|pct|vel|titulo'."""
+    try:
+        import waveflysite as w
+        with w.LOCK:
+            itens = list(w.ITENS)
+        baixando = [i for i in itens if i.get("status") == "baixando"]
+        fila = [i for i in itens if i.get("status") == "fila"]
+        feitos = [i for i in itens if i.get("status") in ("ok", "duplicada", "falha", "cancelada")]
+        atual = baixando[0] if baixando else None
+        total = len(baixando) + len(fila) + len(feitos)
+        return "%d|%d|%d|%d|%s|%s" % (
+            len(baixando), len(fila), total,
+            int(atual.get("pct") or 0) if atual else 0,
+            (atual.get("vel") or "") if atual else "",
+            (atual.get("titulo") or "").replace("|", " ") if atual else "")
+    except Exception:
+        return "0|0|0|0||"
+
+
+def cancelar_tudo():
+    try:
+        import waveflysite as w
+        w.acao({"acao": "cancelar_tudo"})
+    except Exception:
+        pass

@@ -3,6 +3,9 @@ package com.wavefly.app;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -16,6 +19,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.JsPromptResult;
 import android.webkit.JsResult;
 import android.webkit.URLUtil;
@@ -41,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean paginaCarregada = false;
     private boolean destruida = false;
+    private boolean avisouFfmpeg = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,6 +102,9 @@ public class MainActivity extends AppCompatActivity {
         s.setAllowFileAccess(false);
         s.setSupportZoom(false);
         s.setBuiltInZoomControls(false);
+        s.setDisplayZoomControls(false);
+        s.setTextZoom(100);
+        web.addJavascriptInterface(new Ponte(), "WF");
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -116,6 +124,7 @@ public class MainActivity extends AppCompatActivity {
                 paginaCarregada = true;
                 loading.setVisibility(View.GONE);
                 web.setVisibility(View.VISIBLE);
+                avisarFfmpeg();
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -204,16 +213,70 @@ public class MainActivity extends AppCompatActivity {
         else moveTaskToBack(true);
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (web != null) web.onResume();
+    /** Funções do Android que a página pode chamar. */
+    private class Ponte {
+        @JavascriptInterface
+        public String paste() {
+            final String[] out = {""};
+            final java.util.concurrent.CountDownLatch l = new java.util.concurrent.CountDownLatch(1);
+            runOnUiThread(() -> {
+                try {
+                    ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null && cm.hasPrimaryClip()) {
+                        ClipData d = cm.getPrimaryClip();
+                        if (d != null && d.getItemCount() > 0) {
+                            CharSequence t = d.getItemAt(0).coerceToText(MainActivity.this);
+                            if (t != null) out[0] = t.toString();
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                l.countDown();
+            });
+            try {
+                l.await(1, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+            }
+            return out[0];
+        }
+    }
+
+    /** Se o conversor (ffmpeg) não iniciou, mostra o motivo uma vez. */
+    private void avisarFfmpeg() {
+        if (avisouFfmpeg) return;
+        String info = PythonService.ffmpegInfo;
+        if (info == null || info.isEmpty() || info.toLowerCase().startsWith("ffmpeg version")) return;
+        avisouFfmpeg = true;
+        new AlertDialog.Builder(this)
+                .setTitle("Conversor de áudio com problema")
+                .setMessage("O ffmpeg não iniciou. Mande esta mensagem para o suporte:\n\n" + info)
+                .setPositiveButton("OK", null).show();
     }
 
     @Override
-    protected void onPause() {
-        if (web != null) web.onPause();
-        super.onPause();
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && web != null && paginaCarregada) {
+            web.evaluateJavascript("window.wfClip&&wfClip()", null);
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        PythonService.visivel = true;
+    }
+
+    @Override
+    protected void onStop() {
+        PythonService.visivel = false;
+        super.onStop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) web.resumeTimers();
     }
 
     @Override

@@ -218,6 +218,10 @@ OPTS = {
 }
 
 
+if os.environ.get("WAVEFLY_FFMPEG"):
+    OPTS["ffmpeg_location"] = os.environ["WAVEFLY_FFMPEG"]
+
+
 DURS = {}
 
 
@@ -939,8 +943,8 @@ def rel_do_arquivo(destino, nome, exts):
 def processar(it):
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
-    it["vel"] = "Lendo título…"
     titulo_preview = it.get("titulo") or ""
+    it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     try:
         info, titulo, base = obter_info(it["url"])
     except Exception:
@@ -1049,6 +1053,10 @@ def trabalhador():
                         aviso("")
                         continue
                     bloqueado = bloqueio_youtube(erro)
+                    try:
+                        limpar_cancelado(it)
+                    except Exception:
+                        pass
                     marcar(it, "falha", "YouTube bloqueou temporariamente (confirmação necessária)" if bloqueado else erro[:150])
                     break
             feitos += 1
@@ -1083,7 +1091,8 @@ def acao(d):
                     n += 1
                     if i["status"] == "baixando":
                         i["cancel"] = True
-            ITENS[:] = [i for i in ITENS if i["status"] not in ("fila", "baixando")]
+                        i["vel"] = "Cancelando…"
+            ITENS[:] = [i for i in ITENS if i["status"] not in ("fila",)]
             if n:
                 matar_ffmpeg()
         elif a == "limpar":
@@ -1091,8 +1100,10 @@ def acao(d):
         elif it and a == "remover":
             if it["status"] == "baixando":
                 it["cancel"] = True
+                it["vel"] = "Cancelando…"
                 matar_ffmpeg()
-            ITENS.remove(it)
+            else:
+                ITENS.remove(it)
         elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha"):
             it.update(status="fila", forcar=True, auto=True, cancel=False)
         elif it and a == "retentar" and it["status"] == "falha":
@@ -1556,7 +1567,7 @@ ICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect wid
 
 HTML = r'''<!doctype html>
 <html lang="pt-BR"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="color-scheme" content="dark light"><meta name="theme-color" content="#f3e6cc" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#1f1510" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/icon.svg">
 <title>{{APP}}</title>
@@ -2153,7 +2164,8 @@ function cnt(){
  jaIds(LST.filter(x=>!x.pl).map(x=>x.id));ccount();clearTimeout(PVT);PVT=setTimeout(rpv,250)}
 $('#ta').oninput=()=>{PVN=3;cnt()};
 $('#bclr').onclick=()=>{$('#ta').value='';PVN=3;cnt()};
-$('#bpaste').onclick=async()=>{try{$('#ta').value+=($('#ta').value?'\n':'')+await navigator.clipboard.readText();cnt()}catch(e){toast('Cole diretamente na caixa de texto.')}};
+$('#bpaste').onclick=async()=>{let t='';try{t=(window.WF&&WF.paste)?WF.paste():await navigator.clipboard.readText()}catch(e){}t=(t||'').trim();if(t){$('#ta').value+=($('#ta').value?'\n':'')+t;cnt()}else toast('Nenhum link copiado.')};
+let WFLAST='';window.wfClip=()=>{try{if(!window.WF||!WF.paste)return;const ta=$('#ta');if(!ta||ta.value.trim())return;const t=(WF.paste()||'').trim();if(/^https?:\/\/\S+$/i.test(t)&&t!==WFLAST){WFLAST=t;ta.value=t;cnt();toast('Link copiado colado')}}catch(e){}};
 $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
   // TITS é onde o preview guarda o nome de verdade
   if(typeof TITS!=='undefined') TITS.forEach((v,k)=>{ if(v&&v.titulo){window.__TIT['https://www.youtube.com/watch?v='+k]=v.titulo; window.__TIT[k]=v.titulo} });
@@ -2564,8 +2576,9 @@ body .tabs a.on{color:#ffb840!important;text-shadow:none!important}
 }
 </style>
 
-<div id="moldura"></div>
-<style>/* MOLDURA-CIRCULA - barra laranja/amarela circulando por toda periferia */
+
+<style>#moldura{display:none!important}#bvol,#vrow{display:none!important}
+html,body{touch-action:pan-x pan-y}/* MOLDURA-CIRCULA - barra laranja/amarela circulando por toda periferia */
 #moldura{position:fixed!important;inset:0!important;z-index:9999!important;pointer-events:none!important;padding:3px!important;background:linear-gradient(90deg,#ff7a00,#ffd860,#ff8c00,#ffe9b0,#ff7a00)!important;background-size:300% 100%!important;animation:circula-moldura 4s linear infinite!important;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0)!important;-webkit-mask-composite:xor!important;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0)!important;mask-composite:exclude!important}
 @keyframes circula-moldura{0%{background-position:0% 0}100%{background-position:300% 0}}
 body::before,body::after{border-top:none!important}
@@ -2631,6 +2644,73 @@ function salvaTit(){
 setInterval(salvaTit, 800);
 document.addEventListener('input', ()=>setTimeout(salvaTit, 600));
 </script>
+<style>/* TEMA-WAVEFLY-FINAL - visual novo: cores unificadas e botões 3D médios (só aparência) */
+:root{--t-bg:#f4e9d3;--t-s1:#fffaf0;--t-s2:#f0e2c6;--t-ln:#dcc9a3;--t-tx:#34200f;--t-mu:#8b7155;
+--t-ac1:#ff9d45;--t-ac2:#e46f22;--t-acd:#a84a12;--t-on:#2b1304;--t-bt1:#fffdf6;--t-bt2:#eadbbb;--t-btd:#bfa57a;--t-bg-ink:#34200f}
+@media(prefers-color-scheme:dark){:root{--t-bg:#17110d;--t-s1:#241b14;--t-s2:#2f231a;--t-ln:#43332a;--t-tx:#f6ead3;--t-mu:#b9a58b;
+--t-ac1:#ffa94f;--t-ac2:#e9742a;--t-acd:#8f3d0d;--t-on:#2b1304;--t-bt1:#4a392c;--t-bt2:#33271d;--t-btd:#120c08;--t-bg-ink:#f6ead3}}
+html body{background:var(--t-bg)!important;color:var(--t-tx)!important}
+html body h1,html body h2,html body h3,html body .wm,html body .wm i{text-shadow:none!important}
+html body .wm i{color:var(--t-ac2)!important}
+html body .mut,html body .sm,html body .sub,html body p.mut{color:var(--t-mu)!important}
+
+/* cartões e listas: borda fina e sombra suave */
+html body .lr,html body .pc,html body .pl-card,html body .rs,html body .tr,html body .chip,html body .plc,html body .deliver,html body #tray,html body .rb,html body .hello,html body .card,html body .cd{
+ background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 3px 10px rgba(0,0,0,.22)!important;color:var(--t-tx)!important}
+html body .hello{border-style:dashed!important}
+
+/* campos */
+html body textarea,html body input[type=text],html body input[type=number],html body input[type=search],html body select{
+ background:var(--t-s1)!important;color:var(--t-tx)!important;border:1px solid var(--t-ln)!important;border-radius:14px!important;
+ box-shadow:inset 0 2px 5px rgba(0,0,0,.25)!important}
+html body textarea:focus,html body input[type=text]:focus,html body input[type=number]:focus,html body input[type=search]:focus{
+ border-color:var(--t-ac1)!important;box-shadow:inset 0 2px 5px rgba(0,0,0,.25),0 0 0 3px rgba(255,157,69,.22)!important;outline:none!important}
+
+/* botões 3D médios: gradiente, brilho no topo e borda inferior em relevo */
+html body button,html body .sg button,html body .sg a,html body #bpaste,html body #bclr,html body #fbar button,html body #brep,html body .sbar button,html body .sel button,html body #fbl button,html body .srch>button{
+ background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-tx)!important;
+ border:1px solid rgba(255,255,255,.10)!important;text-shadow:none!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 3px 0 var(--t-btd),0 6px 9px rgba(0,0,0,.28)!important;
+ transition:transform .08s ease,box-shadow .08s ease!important}
+html body button:active,html body .sg button:active,html body .sg a:active,html body .tabs a:active{
+ transform:translateY(2px)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 1px 0 var(--t-btd),0 2px 4px rgba(0,0,0,.25)!important}
+html body button.t,html body button.more{background:transparent!important;box-shadow:none!important;border-color:transparent!important;color:var(--t-ac2)!important}
+html body button.t:active{transform:none!important}
+
+/* botão principal e item selecionado: laranja */
+html body button.p,html body #bgo,html body .sg button.on,html body .sg a.on,html body .tabs a.on{
+ background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;
+ border:1px solid rgba(255,255,255,.28)!important;text-shadow:0 1px 0 rgba(255,255,255,.25)!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+html body .tabs a.on svg,html body .tabs a.on span{color:var(--t-on)!important}
+
+/* abas */
+html body .tabs{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
+html body .tabs a{background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;border:1px solid rgba(255,255,255,.08)!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd)!important;text-shadow:none!important}
+
+/* barras de progresso */
+html body .bar{background:var(--t-s2)!important;box-shadow:inset 0 1px 3px rgba(0,0,0,.4)!important}
+html body .bar i{background:linear-gradient(90deg,var(--t-ac1),var(--t-ac2))!important}
+
+/* player */
+html body #pl{background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;background-image:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 10px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)!important;color:var(--t-tx)!important}
+html body #pl *{color:var(--t-tx)}
+html body #bvol,html body #vrow{display:none!important}
+html body #moldura{display:none!important}
+html,body{-webkit-tap-highlight-color:transparent}
+html body::after{display:none!important}
+html body .tabs a,html body .tabs a:nth-child(2),html body .tabs a[data-go],html body .tabs a[href*="buscar"]{
+ border:1px solid rgba(255,255,255,.10)!important;background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd),0 5px 8px rgba(0,0,0,.22)!important;transform:none!important}
+html body .tabs a.on,html body .tabs a:nth-child(2).on,html body .tabs a[data-go].on,html body .tabs a[href*="buscar"].on{
+ background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;border:1px solid rgba(255,255,255,.28)!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+html body .tabs{padding:6px!important}
+html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
+</style>
 </body></html>
 '''
 
