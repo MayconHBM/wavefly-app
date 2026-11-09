@@ -48,7 +48,9 @@ final class FfmpegSetup {
                 if (libs != null) {
                     for (File f : libs) {
                         String n = f.getName();
-                        if (n.contains("ffmpeg") && n.endsWith(".zip.so")) unzip(f, root);
+                        if (n.endsWith(".zip.so") && (n.contains("ffmpeg") || n.contains("python"))) {
+                            unzip(f, root, !n.contains("ffmpeg"));
+                        }
                     }
                 }
                 writeText(marker, versao);
@@ -110,12 +112,13 @@ final class FfmpegSetup {
         }
     }
 
-    private static void unzip(File zip, File dest) throws IOException {
+    private static void unzip(File zip, File dest, boolean soSomente) throws IOException {
         String destPath = dest.getCanonicalPath() + File.separator;
         try (ZipInputStream in = new ZipInputStream(new FileInputStream(zip))) {
             ZipEntry e;
             byte[] buf = new byte[65536];
             while ((e = in.getNextEntry()) != null) {
+                if (soSomente && !e.getName().matches("(?:\\./)?usr/lib/[^/]+\\.so[^/]*")) continue;
                 File out = new File(dest, e.getName());
                 if (!out.getCanonicalPath().startsWith(destPath)) continue; // protege contra zip-slip
                 if (e.isDirectory()) {
