@@ -59,6 +59,10 @@ jobs:
           NEED=$(readelf -d jni/arm64-v8a/libffmpeg.so 2>&1 | grep -i "NEEDED\|RPATH\|RUNPATH" | sed 's/.*\[\(.*\)\]/\1/' | tr '\n' ',')
           echo "::notice title=ffmpeg-needed::${NEED}"
           mkdir -p z && cd z && unzip -o -q ../jni/arm64-v8a/libffmpeg.zip.so
+          cd /tmp && LAAR=$(find ~/.gradle/caches -name "library-0.18.1.aar" | head -1); echo "LAAR=$LAAR"
+          mkdir -p /tmp/lib && cd /tmp/lib && unzip -o -q "$LAAR" && ls jni/arm64-v8a | tr '\n' ',' | xargs -I{} echo "::notice title=library-jni::{}"
+          for Z in jni/arm64-v8a/*.zip.so; do unzip -o -q "$Z" -d /tmp/ff/z; done
+          cd /tmp/ff
           ZL=$(find . -type f | sed 's/^\.\///' | tr '\n' ',')
           echo "::notice title=ffmpeg-zip::${ZL}"
 
