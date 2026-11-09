@@ -27,6 +27,13 @@ jobs:
       - name: Compilar APK
         run: gradle assembleDebug --stacktrace
 
+      - name: Relatório do conteúdo do APK
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          LIST=$(unzip -l "$APK" | grep -i "arm64-v8a" | awk '{print $1" "$4}' | tr '\n' ';')
+          echo "::notice title=libs-arm64::${LIST}"
+          ls ~/.gradle/caches/modules-2/files-2.1 | grep -i "junkfood\|yausername" | tr '\n' ';' | xargs -I{} echo "::notice title=deps::{}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: WaveFly-apk
