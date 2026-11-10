@@ -17,8 +17,8 @@ CSS = """<style id="wf-android-css">
 html body button.pp{background:rgba(0,0,0,.22)!important;border:0!important;border-radius:0!important;
  box-shadow:none!important;color:#fff!important;text-shadow:none!important}
 html body button.pp:active{transform:none!important;box-shadow:none!important}
-.pv video{width:100%;aspect-ratio:16/9;border-radius:14px;background:#000;display:block}
-.pv .pvmsg{padding:14px;text-align:center;color:var(--t-mu,#bbb);font-size:14px}
+html body .rs.pvon .bd2>.tt:first-child{color:var(--t-ac2,#e46f22)!important;font-weight:700}
+html body .rs.pvcarr .bd2>.tt:first-child{opacity:.6}
 </style>
 """
 
@@ -77,28 +77,39 @@ JS = r"""<script id="wf-android-js">
     }
   }catch(e){}
 
-  /* ---- 1b. Prévia de vídeo na busca, no mesmo lugar de antes, tocando o vídeo direto (sem player do YouTube) ---- */
+  /* ---- 1b. Prévia só com áudio na busca: toca no próprio lugar e destaca o título da faixa ---- */
+  var PVID=null,PVAU=null;
+  function pvStop(){
+    if(PVAU){try{PVAU.pause()}catch(x){}PVAU.removeAttribute('src');try{PVAU.load()}catch(x){}PVAU=null}
+    $$('.pp').forEach(function(x){x.innerHTML=ic('play',18);x.classList.remove('on')});
+    $$('.pvon').forEach(function(r){r.classList.remove('pvon','pvcarr')});
+    PVID=null;
+  }
   window.addEventListener('click',function(e){
     try{
       var b=e.target.closest&&e.target.closest('[data-pv]');
       if(!b||!window.WF||!WF.stream)return;
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-      var id=b.dataset.pv,old=$('.pv'),same=old&&old.dataset.id===id;
-      if(old)old.remove();
-      $$('.pp').forEach(function(x){x.innerHTML=ic('play',18)});
-      if(same)return;
+      var id=b.dataset.pv;
+      if(PVID===id){pvStop();return}
+      pvStop();
+      var au=aud();if(au&&!au.paused){try{togglePlay()}catch(x){}}   /* pausa o player da biblioteca */
+      PVID=id;
       var row=b.closest('.rs,.tr');
-      row.insertAdjacentHTML('afterend','<div class="pv" data-id="'+esc(id)+'"><video controls playsinline autoplay></video><div class="pvmsg">Carregando vídeo…</div></div>');
-      b.innerHTML=ic('stop',18);
+      if(row)row.classList.add('pvon','pvcarr');
+      b.innerHTML=ic('stop',18);b.classList.add('on');
       WF.stream(id);
     }catch(x){}
   },true);
   window.wfStream=function(id,url,err){
-    var pv=document.querySelector('.pv[data-id="'+id+'"]');if(!pv)return;
-    var v=pv.querySelector('video'),m=pv.querySelector('.pvmsg');
-    if(!url){if(m)m.textContent=err||'Não foi possível carregar este vídeo.';return}
-    if(m)m.remove();
-    v.src=url;var p=v.play();if(p&&p.catch)p.catch(function(){});
+    if(PVID!==id)return;
+    if(!url){toast(err||'Não foi possível tocar esta prévia.');pvStop();return}
+    var row=document.querySelector('[data-pv="'+id+'"]');row=row&&row.closest('.rs,.tr');
+    if(row)row.classList.remove('pvcarr');
+    PVAU=new Audio(url);
+    PVAU.onended=pvStop;
+    PVAU.onerror=function(){toast('Não consegui tocar esta prévia.');pvStop()};
+    var p=PVAU.play();if(p&&p.catch)p.catch(function(){toast('Não consegui tocar esta prévia.');pvStop()});
   };
 
   /* ---- 1c. Vídeo continua tocando (só o áudio) quando o app vai para segundo plano ---- */

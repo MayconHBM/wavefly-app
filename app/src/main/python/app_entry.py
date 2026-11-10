@@ -145,13 +145,13 @@ def verificar(raiz):
 
 
 def stream_url(vid):
-    """Endereço direto de um vídeo (áudio+vídeo juntos, até 480p) para a prévia da busca."""
+    """Endereço direto do áudio de um vídeo, para a prévia da busca."""
     try:
         import yt_dlp
         import waveflysite as w
         opts = {k: v for k, v in w.OPTS.items() if k not in ("outtmpl", "windowsfilenames")}
         opts.update({
-            "format": "best[height<=480][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]",
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
             "skip_download": True, "noplaylist": True, "quiet": True, "no_warnings": True,
         })
         with yt_dlp.YoutubeDL(opts) as y:
@@ -159,9 +159,9 @@ def stream_url(vid):
         url = info.get("url") or ""
         if not url:
             for f in reversed(info.get("formats") or []):
-                if f.get("url") and f.get("vcodec") not in (None, "none") and f.get("acodec") not in (None, "none"):
+                if f.get("url") and f.get("acodec") not in (None, "none"):
                     url = f["url"]
                     break
-        return url or "ERRO:Este vídeo não tem uma versão com áudio e vídeo juntos para prévia."
+        return url or "ERRO:Não achei o áudio deste vídeo para a prévia."
     except BaseException as e:
         return "ERRO:" + str(e)[:200]
