@@ -5,12 +5,15 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
-import android.media.AudioManager;
+import android.graphics.drawable.Icon;
+import android.media.MediaMetadata;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import com.chaquo.python.PyObject;
@@ -19,6 +22,13 @@ import com.chaquo.python.android.AndroidPlatform;
 
 /**
  * Mantém o servidor Python do WaveFly vivo enquanto há download ou música tocando.
+ *
+ * Notificação (só aparece quando faz sentido):
+ * - baixando: "Baixando" com a contagem (ex.: 3/10);
+ * - tocando música (vídeo não): player com anterior / tocar-pausar / próxima;
+ * - os dois ao mesmo tempo: uma notificação só, com o player e a contagem do download.
+ * Sem download e sem música, não há notificação nenhuma.
+ *
  * - Deslizar o app nos recentes encerra tudo.
  * - Fora da tela e sem fazer nada por 10 minutos, encerra sozinho.
  */
@@ -26,8 +36,14 @@ public class PythonService extends Service {
     static final int PORT = 8773;
     static final String ACTION_STOP = "com.wavefly.app.STOP";
     static final String ACTION_CANCEL = "com.wavefly.app.CANCEL";
+    static final String ACTION_PLAY_PAUSE = "com.wavefly.app.PLAY_PAUSE";
+    static final String ACTION_NEXT = "com.wavefly.app.NEXT";
+    static final String ACTION_PREV = "com.wavefly.app.PREV";
     private static final String CHANNEL = "wavefly";
+    private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
+    /** Depois que não há mais o que manter em primeiro plano, espera um pouco antes de soltar. */
+    private static final long GRACA_MS = 8000L;
     private static final String TAG = "WaveFly";
 
     static volatile String status = "Iniciando…";
@@ -37,9 +53,23 @@ public class PythonService extends Service {
     static volatile boolean visivel = false;
     private static boolean started = false;
 
+    // Estado do player, enviado pela página (MainActivity.Ponte.player)
+    static volatile boolean pAtivo = false;     // existe uma faixa carregada no player
+    static volatile boolean pTocando = false;
+    static volatile boolean pVideo = false;
+    static volatile String pTitulo = "";
+    static volatile String pSub = "";
+    static volatile long pPosMs = 0;
+    static volatile long pDurMs = 0;
+    static volatile long pEm = 0;               // SystemClock.elapsedRealtime() do último aviso
+
     private PowerManager.WakeLock wakeLock;
     private volatile boolean rodando = true;
-    private String ultimoTexto = "";
+    private Thread vigia;
+    private MediaSession sessao;
+    private boolean emPrimeiroPlano = false;
+    private long semUsoDesde = 0;
+    private String ultimaChave = "";
 
     @Override
     public void onCreate() {
@@ -47,16 +77,17 @@ public class PythonService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && nm != null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "WaveFly", NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("Mostra o andamento dos downloads");
+            ch.setDescription("Downloads e player");
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
         }
-        startForeground(1, buildNotification("WaveFly", "Aberto", -1));
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WaveFly:downloads");
             wakeLock.setReferenceCounted(false);
         }
+        vigia = new Thread(this::vigiar, "wavefly-watch");
+        vigia.start();
     }
 
     @Override
@@ -75,11 +106,22 @@ public class PythonService extends Service {
             }).start();
             return START_STICKY;
         }
+        if (ACTION_PLAY_PAUSE.equals(act)) {
+            MainActivity.comandoPlayer(pTocando ? "pause" : "play");
+            return START_STICKY;
+        }
+        if (ACTION_NEXT.equals(act)) {
+            MainActivity.comandoPlayer("next");
+            return START_STICKY;
+        }
+        if (ACTION_PREV.equals(act)) {
+            MainActivity.comandoPlayer("prev");
+            return START_STICKY;
+        }
         synchronized (PythonService.class) {
             if (!started) {
                 started = true;
                 new Thread(this::boot, "wavefly-boot").start();
-                new Thread(this::vigiar, "wavefly-watch").start();
             }
         }
         return START_STICKY;
@@ -93,7 +135,13 @@ public class PythonService extends Service {
 
     private void encerrar() {
         rodando = false;
-        stopForeground(true);
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(NOTIF_ID);
+        } catch (Throwable ignored) {
+        }
+        fecharSessao();
+        pararPrimeiroPlano(true);
         stopSelf();
         android.os.Process.killProcess(android.os.Process.myPid());
     }
@@ -130,31 +178,28 @@ public class PythonService extends Service {
         }
     }
 
-    /** A cada poucos segundos: atualiza a notificação e controla o encerramento por inatividade. */
+    /** A cada segundo: atualiza a notificação e controla o encerramento por inatividade. */
     private void vigiar() {
         long ociosoDesde = 0;
         while (rodando) {
             try {
-                Thread.sleep(3000);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 return;
             }
             if (!ready) continue;
-            int baixando = 0, fila = 0, total = 0, pct = 0;
-            String vel = "", titulo = "";
+            int baixando = 0, fila = 0, total = 0;
             try {
                 String[] p = Python.getInstance().getModule("app_entry").callAttr("resumo").toString().split("\\|", -1);
                 baixando = Integer.parseInt(p[0]);
                 fila = Integer.parseInt(p[1]);
                 total = Integer.parseInt(p[2]);
-                pct = Integer.parseInt(p[3]);
-                vel = p[4];
-                titulo = p[5];
             } catch (Throwable ignored) {
             }
-            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            boolean tocando = am != null && am.isMusicActive();
-            boolean ativo = baixando > 0 || fila > 0 || tocando;
+            boolean baixandoAlgo = baixando + fila > 0;
+            boolean musica = pAtivo && !pVideo;          // vídeo não tem player na notificação
+            boolean tocandoAlgo = pAtivo && pTocando;    // música ou vídeo: mantém o app acordado
+            boolean ativo = baixandoAlgo || tocandoAlgo;
 
             if (ativo) {
                 if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(60 * 60 * 1000L);
@@ -162,24 +207,10 @@ public class PythonService extends Service {
                 wakeLock.release();
             }
 
-            String t1, t2;
-            int prog = -1;
-            if (baixando > 0 || fila > 0) {
-                t1 = "Baixando " + (baixando + fila) + (baixando + fila == 1 ? " item" : " itens");
-                t2 = (titulo.isEmpty() ? "" : titulo + " · ") + pct + "%" + (vel.isEmpty() ? "" : " · " + vel);
-                prog = pct;
-            } else if (tocando) {
-                t1 = "WaveFly";
-                t2 = "Tocando música";
-            } else {
-                t1 = "WaveFly";
-                t2 = visivel ? "Aberto" : "Em espera";
-            }
-            String chave = t1 + "|" + t2 + "|" + prog;
-            if (!chave.equals(ultimoTexto)) {
-                ultimoTexto = chave;
-                NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                if (nm != null) nm.notify(1, buildNotification(t1, t2, prog, baixando + fila > 0));
+            try {
+                atualizarNotificacao(baixandoAlgo, musica, musica && pTocando, Math.max(0, total - baixando - fila), total);
+            } catch (Throwable t) {
+                Log.w(TAG, "notificação", t);
             }
 
             if (visivel || ativo) {
@@ -194,39 +225,185 @@ public class PythonService extends Service {
         }
     }
 
-    private Notification buildNotification(String titulo, String texto, int progresso) {
-        return buildNotification(titulo, texto, progresso, false);
+    private void atualizarNotificacao(boolean baixando, boolean musica, boolean musicaTocando, int feitos, int total) {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        // Nada para mostrar: tira a notificação.
+        if (!baixando && !musica) {
+            semUsoDesde = 0;
+            if (emPrimeiroPlano) pararPrimeiroPlano(true);
+            else if (!ultimaChave.isEmpty()) nm.cancel(NOTIF_ID);
+            ultimaChave = "";
+            fecharSessao();
+            return;
+        }
+
+        // Em primeiro plano enquanto baixa ou toca música; ao parar, espera um pouco antes de soltar
+        // (evita sobe-e-desce na troca de faixa/download).
+        long agora = System.currentTimeMillis();
+        boolean precisa = baixando || musicaTocando;
+        boolean fixa;
+        if (precisa) {
+            semUsoDesde = 0;
+            fixa = true;
+        } else if (emPrimeiroPlano) {
+            if (semUsoDesde == 0) semUsoDesde = agora;
+            fixa = agora - semUsoDesde < GRACA_MS;
+        } else {
+            fixa = false;
+        }
+
+        String chave = (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando : "d")
+                + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
+        if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
+
+        Notification n = montar(baixando, musica, feitos, total, fixa);
+        try {
+            if (fixa && !emPrimeiroPlano) {
+                startForeground(NOTIF_ID, n);
+                emPrimeiroPlano = true;
+            } else if (!fixa && emPrimeiroPlano) {
+                pararPrimeiroPlano(false);
+                nm.notify(NOTIF_ID, n);
+            } else {
+                nm.notify(NOTIF_ID, n);
+            }
+        } catch (Throwable t) {
+            // Se o Android não deixar subir para primeiro plano (app em segundo plano), mostra mesmo assim.
+            Log.w(TAG, "primeiro plano", t);
+            try {
+                nm.notify(NOTIF_ID, n);
+            } catch (Throwable ignored) {
+            }
+        }
+        ultimaChave = chave;
     }
 
-    private Notification buildNotification(String titulo, String texto, int progresso, boolean comCancelar) {
+    private Notification montar(boolean baixando, boolean musica, int feitos, int total, boolean fixa) {
         Intent open = new Intent(this, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Intent cancel = new Intent(this, PythonService.class).setAction(ACTION_CANCEL);
-        PendingIntent pc = PendingIntent.getService(this, 2, cancel, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Intent stop = new Intent(this, PythonService.class).setAction(ACTION_STOP);
-        PendingIntent ps = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL)
                 : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(titulo)
-                .setContentText(texto)
                 .setContentIntent(pi)
                 .setOnlyAlertOnce(true)
-                .setOngoing(true);
-        if (progresso >= 0) b.setProgress(100, progresso, false);
-        if (comCancelar) {
-            b.addAction(new Notification.Action.Builder(null, "Cancelar", pc).build());
+                .setOngoing(fixa)
+                .setVisibility(Notification.VISIBILITY_PUBLIC);
+
+        String contagem = feitos + "/" + total;
+        if (musica) {
+            atualizarSessao();
+            b.setContentTitle(pTitulo.isEmpty() ? "WaveFly" : pTitulo);
+            if (baixando) {
+                b.setContentText("Baixando " + contagem);
+                b.setProgress(total, Math.min(feitos, total), false);
+            } else {
+                b.setContentText(pSub);
+            }
+            b.addAction(acao(ACTION_PREV, android.R.drawable.ic_media_previous, "Anterior", 5));
+            b.addAction(acao(ACTION_PLAY_PAUSE,
+                    pTocando ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                    pTocando ? "Pausar" : "Tocar", 3));
+            b.addAction(acao(ACTION_NEXT, android.R.drawable.ic_media_next, "Próxima", 4));
+            if (baixando) b.addAction(acao(ACTION_CANCEL, 0, "Cancelar download", 2));
+            Notification.MediaStyle estilo = new Notification.MediaStyle();
+            synchronized (this) {
+                if (sessao != null) estilo.setMediaSession(sessao.getSessionToken());
+            }
+            estilo.setShowActionsInCompactView(0, 1, 2);
+            b.setStyle(estilo);
+        } else {
+            b.setContentTitle("Baixando");
+            b.setContentText(contagem);
+            b.setProgress(total, Math.min(feitos, total), false);
+            b.addAction(acao(ACTION_CANCEL, 0, "Cancelar", 2));
         }
-        b.addAction(new Notification.Action.Builder(null, "Encerrar", ps).build());
         return b.build();
+    }
+
+    private Notification.Action acao(String action, int iconeRes, String titulo, int codigo) {
+        Intent i = new Intent(this, PythonService.class).setAction(action);
+        PendingIntent p = PendingIntent.getService(this, codigo, i,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Icon icone = iconeRes == 0 ? null : Icon.createWithResource("android", iconeRes);
+        return new Notification.Action.Builder(icone, titulo, p).build();
+    }
+
+    /** Sessão de mídia: dá os botões na tela de bloqueio / fone Bluetooth e o visual de player. */
+    private synchronized void atualizarSessao() {
+        try {
+            if (sessao == null) {
+                sessao = new MediaSession(this, "WaveFly");
+                sessao.setCallback(new MediaSession.Callback() {
+                    @Override
+                    public void onPlay() {
+                        MainActivity.comandoPlayer("play");
+                    }
+
+                    @Override
+                    public void onPause() {
+                        MainActivity.comandoPlayer("pause");
+                    }
+
+                    @Override
+                    public void onSkipToNext() {
+                        MainActivity.comandoPlayer("next");
+                    }
+
+                    @Override
+                    public void onSkipToPrevious() {
+                        MainActivity.comandoPlayer("prev");
+                    }
+                });
+            }
+            sessao.setActive(true);
+            MediaMetadata.Builder md = new MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
+            if (pDurMs > 0) md.putLong(MediaMetadata.METADATA_KEY_DURATION, pDurMs);
+            sessao.setMetadata(md.build());
+            long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
+            PlaybackState ps = new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+                    .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                            pPosMs, pTocando ? 1f : 0f, em)
+                    .build();
+            sessao.setPlaybackState(ps);
+        } catch (Throwable t) {
+            Log.w(TAG, "sessão de mídia", t);
+        }
+    }
+
+    private synchronized void fecharSessao() {
+        if (sessao == null) return;
+        try {
+            sessao.setActive(false);
+            sessao.release();
+        } catch (Throwable ignored) {
+        }
+        sessao = null;
+    }
+
+    private void pararPrimeiroPlano(boolean removerNotificacao) {
+        try {
+            stopForeground(removerNotificacao ? Service.STOP_FOREGROUND_REMOVE : Service.STOP_FOREGROUND_DETACH);
+        } catch (Throwable ignored) {
+        }
+        emPrimeiroPlano = false;
     }
 
     @Override
     public void onDestroy() {
         rodando = false;
+        if (vigia != null) vigia.interrupt();
+        fecharSessao();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();
     }

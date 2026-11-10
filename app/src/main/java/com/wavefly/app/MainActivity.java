@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -46,10 +47,12 @@ public class MainActivity extends AppCompatActivity {
     private boolean paginaCarregada = false;
     private boolean destruida = false;
     private boolean avisouFfmpeg = false;
+    private static MainActivity atual;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        atual = this;
         boolean escuro = (getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
@@ -90,7 +93,6 @@ public class MainActivity extends AppCompatActivity {
 
         configurarWeb();
         pedirPermissoes();
-        iniciarServico();
         aguardarServidor();
     }
 
@@ -181,9 +183,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void iniciarServico() {
-        Intent i = new Intent(this, PythonService.class);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
-        else startService(i);
+        // Serviço comum: só vira "primeiro plano" (com notificação) quando há download ou música tocando.
+        startService(new Intent(this, PythonService.class));
     }
 
     /** Espera o servidor Python ficar pronto e então abre a página. */
@@ -213,8 +214,32 @@ public class MainActivity extends AppCompatActivity {
         else moveTaskToBack(true);
     }
 
+    /** Manda um comando (play, pause, next, prev) para o player da página. Usado pela notificação. */
+    static void comandoPlayer(final String cmd) {
+        final MainActivity a = atual;
+        if (a == null) return;
+        a.runOnUiThread(() -> {
+            if (a.web != null && !a.destruida && a.paginaCarregada) {
+                a.web.evaluateJavascript("window.wfCmd&&wfCmd('" + cmd + "')", null);
+            }
+        });
+    }
+
     /** Funções do Android que a página pode chamar. */
     private class Ponte {
+        /** A página avisa o estado do player para a notificação. */
+        @JavascriptInterface
+        public void player(int ativo, int tocando, int video, String titulo, String sub, int posMs, int durMs) {
+            PythonService.pTitulo = titulo == null ? "" : titulo;
+            PythonService.pSub = sub == null ? "" : sub;
+            PythonService.pVideo = video == 1;
+            PythonService.pTocando = tocando == 1;
+            PythonService.pPosMs = posMs;
+            PythonService.pDurMs = durMs;
+            PythonService.pEm = SystemClock.elapsedRealtime();
+            PythonService.pAtivo = ativo == 1;
+        }
+
         @JavascriptInterface
         public String paste() {
             final String[] out = {""};
@@ -254,17 +279,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && web != null && paginaCarregada) {
-            web.evaluateJavascript("window.wfClip&&wfClip()", null);
-        }
-    }
-
-    @Override
     protected void onStart() {
         super.onStart();
         PythonService.visivel = true;
+        iniciarServico();
     }
 
     @Override
@@ -282,6 +300,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         destruida = true;
+        if (atual == this) atual = null;
         ui.removeCallbacksAndMessages(null);
         if (web != null) {
             ((ViewGroup) web.getParent()).removeView(web);

@@ -39,6 +39,11 @@ def start(data_dir, ffmpeg_bin, ffmpeg_lib, port):
 
         sys.argv = ["wavefly", "--no-browser", "--port", str(port)]
         import waveflysite
+        try:
+            import wavefly_android
+            wavefly_android.aplicar(waveflysite)
+        except Exception:
+            traceback.print_exc()
 
         _thread = threading.Thread(target=waveflysite.main, name="wavefly-server", daemon=True)
         _thread.start()

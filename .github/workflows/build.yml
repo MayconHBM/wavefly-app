@@ -2,7 +2,7 @@ name: Gerar APK do WaveFly
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'ajustes-**' ]
   workflow_dispatch:
 
 jobs:
@@ -108,4 +108,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk WaveFly.apk
-          gh release create "v1.${{ github.run_number }}" WaveFly.apk --title "WaveFly v1.${{ github.run_number }}" --notes "APK do WaveFly" --latest
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            gh release create "v1.${{ github.run_number }}" WaveFly.apk --title "WaveFly v1.${{ github.run_number }}" --notes "APK do WaveFly" --latest
+          else
+            # branch de teste: publica como pré-lançamento, sem virar a versão "mais recente"
+            gh release create "teste-${{ github.run_number }}" WaveFly.apk --target "${GITHUB_SHA}" --prerelease --latest=false \
+              --title "WaveFly TESTE #${{ github.run_number }} (${GITHUB_REF_NAME})" \
+              --notes "APK de teste da branch ${GITHUB_REF_NAME}. Ainda não está na main."
+          fi
