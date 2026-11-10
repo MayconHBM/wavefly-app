@@ -363,6 +363,11 @@ public class PythonService extends Service {
                     @Override
                     public void onSeekTo(long pos) {
                         Log.i(TAG, "onSeekTo " + pos);
+                        final long seg = pos / 1000;
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                                android.widget.Toast.makeText(getApplicationContext(),
+                                        "[teste] O Android avisou: pular para " + (seg / 60) + ":" + String.format("%02d", seg % 60),
+                                        android.widget.Toast.LENGTH_SHORT).show());
                         pPosMs = pos;
                         pEm = SystemClock.elapsedRealtime();
                         atualizarSessao();

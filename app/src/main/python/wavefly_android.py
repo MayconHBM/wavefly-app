@@ -173,7 +173,7 @@ JS = r"""<script id="wf-android-js">
       else if(c==='next')proxima(1);
       else if(c==='prev')proxima(-1);
       else if(c==='stop')stopPlayer();
-      else if(c.indexOf('seek:')===0){var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200)}}
+      else if(c.indexOf('seek:')===0){try{toast('[teste] Comando de pular chegou na página')}catch(x){}var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200);try{toast('[teste] Player pulou para '+tf(ms/1000))}catch(x){}}}
     }catch(e){}
   };
 
