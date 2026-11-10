@@ -6,6 +6,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
@@ -62,6 +64,10 @@ public class PythonService extends Service {
     static volatile long pPosMs = 0;
     static volatile long pDurMs = 0;
     static volatile long pEm = 0;               // SystemClock.elapsedRealtime() do último aviso
+    static volatile String pCapa = "";          // caminho relativo do arquivo (para buscar a capa)
+    private volatile Bitmap capaBmp = null;
+    private volatile String capaDe = "";
+    private volatile String capaBuscando = "";
 
     private PowerManager.WakeLock wakeLock;
     private volatile boolean rodando = true;
@@ -197,7 +203,7 @@ public class PythonService extends Service {
             } catch (Throwable ignored) {
             }
             boolean baixandoAlgo = baixando + fila > 0;
-            boolean musica = pAtivo && !pVideo;          // vídeo não tem player na notificação
+            boolean musica = pAtivo;                     // música e vídeo (no vídeo, só o áudio)
             boolean tocandoAlgo = pAtivo && pTocando;    // música ou vídeo: mantém o app acordado
             boolean ativo = baixandoAlgo || tocandoAlgo;
 
@@ -254,7 +260,8 @@ public class PythonService extends Service {
             fixa = false;
         }
 
-        String chave = (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando : "d")
+        if (musica) buscarCapa(pCapa);
+        String chave = (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
@@ -298,6 +305,9 @@ public class PythonService extends Service {
         String contagem = feitos + "/" + total;
         if (musica) {
             atualizarSessao();
+            b.setColor(0xFF3B2314).setColorized(true).setShowWhen(false);
+            Bitmap cb = capaBmp;
+            if (cb != null && capaDe.equals(pCapa)) b.setLargeIcon(cb);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly" : pTitulo);
             if (baixando) {
                 b.setContentText("Baixando " + contagem);
@@ -351,6 +361,11 @@ public class PythonService extends Service {
                     }
 
                     @Override
+                    public void onSeekTo(long pos) {
+                        MainActivity.comandoPlayer("seek:" + pos);
+                    }
+
+                    @Override
                     public void onSkipToNext() {
                         MainActivity.comandoPlayer("next");
                     }
@@ -366,12 +381,14 @@ public class PythonService extends Service {
                     .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
             if (pDurMs > 0) md.putLong(MediaMetadata.METADATA_KEY_DURATION, pDurMs);
+            Bitmap cb = capaBmp;
+            if (cb != null && capaDe.equals(pCapa)) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
             long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
             PlaybackState ps = new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                             | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
-                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
                     .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
                             pPosMs, pTocando ? 1f : 0f, em)
                     .build();
@@ -389,6 +406,42 @@ public class PythonService extends Service {
         } catch (Throwable ignored) {
         }
         sessao = null;
+    }
+
+    /** Baixa a capa da faixa atual do servidor local (em segundo plano) e guarda para a notificação. */
+    private void buscarCapa(final String rel) {
+        if (rel == null || rel.isEmpty() || rel.equals(capaDe) || rel.equals(capaBuscando)) return;
+        capaBuscando = rel;
+        new Thread(() -> {
+            Bitmap bmp = null;
+            try {
+                java.net.URL u = new java.net.URL("http://127.0.0.1:" + PORT + "/api/capa?f="
+                        + java.net.URLEncoder.encode(rel, "UTF-8"));
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
+                c.setConnectTimeout(3000);
+                c.setReadTimeout(8000);
+                java.io.InputStream in = c.getInputStream();
+                java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = in.read(buf)) > 0 && bo.size() < 6_000_000) bo.write(buf, 0, n);
+                in.close();
+                byte[] dados = bo.toByteArray();
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                BitmapFactory.decodeByteArray(dados, 0, dados.length, o);
+                int lado = Math.max(o.outWidth, o.outHeight), amostra = 1;
+                while (lado / amostra > 600) amostra *= 2;
+                o = new BitmapFactory.Options();
+                o.inSampleSize = amostra;
+                bmp = BitmapFactory.decodeByteArray(dados, 0, dados.length, o);
+            } catch (Throwable t) {
+                Log.w(TAG, "capa da notificação", t);
+            }
+            capaBmp = bmp;
+            capaDe = rel;
+            capaBuscando = "";
+        }, "wavefly-capa").start();
     }
 
     private void pararPrimeiroPlano(boolean removerNotificacao) {

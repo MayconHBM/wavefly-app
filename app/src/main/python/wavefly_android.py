@@ -23,48 +23,67 @@ html body button.pp:active{transform:none!important;box-shadow:none!important}
 # --------------------------------------------------------------------------- JS
 JS = r"""<script id="wf-android-js">
 (function(){
-  /* ---- 1. Fechar "Ajustes e Qualidade" arrastando para baixo ---- */
+  /* ---- 1. Fechar "Ajustes e Qualidade" arrastando para baixo (acompanha o dedo, fecha com inércia) ---- */
   try{
     var sh=document.getElementById('sheet'),pn=sh&&sh.querySelector('.spn');
     if(pn){
-      var x0=0,y0=0,dy=0,t0=0,arr=false,mov=false;
+      var x0=0,y0=0,off=0,arr=false,mov=false,vel=0,ly=0,lt=0,raf=0,LIM=10;
+      pn.style.willChange='transform';pn.style.overscrollBehavior='contain';
       var fechar=function(){try{fecharAj()}catch(e){sh.classList.remove('on')}};
+      var pinta=function(){raf=0;pn.style.transform='translate3d(0,'+off+'px,0)'};
+      var limpa=function(){pn.style.transition='';pn.style.transform=''};
       pn.addEventListener('touchstart',function(e){
-        arr=false;mov=false;dy=0;
+        arr=false;mov=false;off=0;vel=0;
         if(e.touches.length!==1)return;
         if(e.target.closest&&e.target.closest('input,select,textarea'))return;
         if(pn.scrollTop>0)return;
-        arr=true;x0=e.touches[0].clientX;y0=e.touches[0].clientY;t0=Date.now();
+        arr=true;x0=e.touches[0].clientX;y0=ly=e.touches[0].clientY;lt=performance.now();
       },{passive:true});
       pn.addEventListener('touchmove',function(e){
         if(!arr)return;
-        var t=e.touches[0],dx=t.clientX-x0;dy=t.clientY-y0;
+        var t=e.touches[0],dx=t.clientX-x0,dy=t.clientY-y0,agora=performance.now();
         if(!mov){
           if(Math.abs(dx)>Math.abs(dy)||dy<-4){arr=false;return}
-          if(dy<8)return;
+          if(dy<LIM)return;
           if(pn.scrollTop>0){arr=false;return}
           mov=true;pn.style.transition='none';
         }
-        pn.style.transform='translateY('+Math.max(0,dy)+'px)';
+        var dt=Math.max(1,agora-lt);vel=0.75*vel+0.25*((t.clientY-ly)/dt);ly=t.clientY;lt=agora;
+        off=Math.max(0,dy-LIM);
+        if(!raf)raf=requestAnimationFrame(pinta);
         if(e.cancelable)e.preventDefault();
       },{passive:false});
       var soltar=function(){
         if(!mov){arr=false;return}
-        var v=dy/Math.max(1,Date.now()-t0);
         arr=false;mov=false;
-        pn.style.transition='transform .22s ease';
-        if(dy>110||(dy>40&&v>0.5)){
-          pn.style.transform='translateY(100%)';fechar();
-          setTimeout(function(){pn.style.transition='';pn.style.transform=''},320);
+        if(raf){cancelAnimationFrame(raf);raf=0}
+        var h=pn.getBoundingClientRect().height||600;
+        if(off>h*0.28||vel>0.55){
+          var resta=Math.max(1,h-off),ms=Math.max(160,Math.min(320,resta/Math.max(0.6,vel)));
+          pn.style.transition='transform '+ms+'ms cubic-bezier(.25,.8,.3,1)';
+          pn.style.transform='translate3d(0,100%,0)';
+          setTimeout(function(){fechar();setTimeout(limpa,60)},ms);
         }else{
-          pn.style.transform='';
-          setTimeout(function(){pn.style.transition=''},260);
+          pn.style.transition='transform .32s cubic-bezier(.2,.9,.25,1)';
+          pn.style.transform='translate3d(0,0,0)';
+          setTimeout(limpa,340);
         }
+        off=0;
       };
       pn.addEventListener('touchend',soltar);
       pn.addEventListener('touchcancel',soltar);
     }
   }catch(e){}
+
+  /* ---- 1b. Prévia de vídeo na busca: abre numa janela do app (o YouTube recusa o endereço local) ---- */
+  window.addEventListener('click',function(e){
+    try{
+      var b=e.target.closest&&e.target.closest('[data-pv]');
+      if(!b||!window.WF||!WF.preview)return;
+      e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+      WF.preview(b.dataset.pv);
+    }catch(x){}
+  },true);
 
   /* ---- 2. Avisar o app Android sobre o player (a notificação usa isso) ---- */
   function aud(){return document.getElementById('au')}
@@ -77,7 +96,7 @@ JS = r"""<script id="wf-android-js">
       var toc=!!(a&&cur&&!a.paused&&!a.ended);
       var pos=a&&isFinite(a.currentTime)?Math.round(a.currentTime*1000):0;
       var dur=a&&isFinite(a.duration)?Math.round(a.duration*1000):0;
-      WF.player(cur?1:0,toc?1:0,vid?1:0,txt('plt'),txt('pls'),pos,dur);
+      WF.player(cur?1:0,toc?1:0,vid?1:0,txt('plt'),txt('pls'),pos,dur,cur);
     }catch(e){}
   };
   ['play','playing','pause','ended','seeked','loadedmetadata','durationchange','emptied'].forEach(function(n){
@@ -96,6 +115,7 @@ JS = r"""<script id="wf-android-js">
       else if(c==='next')proxima(1);
       else if(c==='prev')proxima(-1);
       else if(c==='stop')stopPlayer();
+      else if(c.indexOf('seek:')===0){if(a)a.currentTime=parseInt(c.slice(5),10)/1000}
     }catch(e){}
   };
 

@@ -229,7 +229,8 @@ public class MainActivity extends AppCompatActivity {
     private class Ponte {
         /** A página avisa o estado do player para a notificação. */
         @JavascriptInterface
-        public void player(int ativo, int tocando, int video, String titulo, String sub, int posMs, int durMs) {
+        public void player(int ativo, int tocando, int video, String titulo, String sub, int posMs, int durMs, String capa) {
+            PythonService.pCapa = capa == null ? "" : capa;
             PythonService.pTitulo = titulo == null ? "" : titulo;
             PythonService.pSub = sub == null ? "" : sub;
             PythonService.pVideo = video == 1;
@@ -238,6 +239,12 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pDurMs = durMs;
             PythonService.pEm = SystemClock.elapsedRealtime();
             PythonService.pAtivo = ativo == 1;
+        }
+
+        /** Prévia de vídeo da busca: abre numa janela própria com origem https (o YouTube recusa localhost). */
+        @JavascriptInterface
+        public void preview(final String id) {
+            runOnUiThread(() -> mostrarPrevia(id));
         }
 
         @JavascriptInterface
@@ -263,6 +270,64 @@ public class MainActivity extends AppCompatActivity {
             } catch (InterruptedException ignored) {
             }
             return out[0];
+        }
+    }
+
+    private android.app.Dialog previa;
+
+    private void mostrarPrevia(String id) {
+        if (id == null || !id.matches("[A-Za-z0-9_-]{6,20}")) return;
+        if (previa != null) previa.dismiss();
+        final WebView w = new WebView(this);
+        WebSettings st = w.getSettings();
+        st.setJavaScriptEnabled(true);
+        st.setDomStorageEnabled(true);
+        st.setMediaPlaybackRequiresUserGesture(false);
+        w.setBackgroundColor(Color.BLACK);
+        w.setWebChromeClient(new WebChromeClient());
+        w.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, android.webkit.WebResourceRequest r) {
+                String h = r.getUrl().getHost();
+                return h == null || !(h.endsWith("youtube.com") || h.endsWith("youtube-nocookie.com")
+                        || h.endsWith("google.com") || h.endsWith("gstatic.com") || h.endsWith("ytimg.com")
+                        || h.endsWith("googlevideo.com"));
+            }
+        });
+        String html = "<html><body style='margin:0;background:#000'><iframe style='position:fixed;inset:0;width:100%;height:100%;border:0' "
+                + "src='https://www.youtube.com/embed/" + id + "?autoplay=1&playsinline=1&rel=0&modestbranding=1' "
+                + "allow='autoplay; encrypted-media; picture-in-picture; fullscreen' allowfullscreen "
+                + "referrerpolicy='strict-origin-when-cross-origin'></iframe></body></html>";
+        w.loadDataWithBaseURL("https://www.youtube.com/", html, "text/html", "utf-8", null);
+
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundColor(Color.BLACK);
+        int largura = getResources().getDisplayMetrics().widthPixels;
+        box.addView(w, new FrameLayout.LayoutParams(largura, largura * 9 / 16));
+        TextView fechar = new TextView(this);
+        fechar.setText("✕  Fechar");
+        fechar.setTextColor(Color.WHITE);
+        fechar.setTextSize(16);
+        fechar.setPadding(40, 28, 40, 28);
+        fechar.setBackgroundColor(0xFF3B2314);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
+        box.addView(fechar, lp);
+        box.setMinimumHeight(largura * 9 / 16 + 120);
+
+        final android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
+        d.setContentView(box);
+        d.setOnDismissListener(x -> {
+            w.loadUrl("about:blank");
+            w.destroy();
+            if (previa == d) previa = null;
+        });
+        fechar.setOnClickListener(x -> d.dismiss());
+        previa = d;
+        d.show();
+        if (d.getWindow() != null) {
+            d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            d.getWindow().setGravity(Gravity.TOP);
         }
     }
 
