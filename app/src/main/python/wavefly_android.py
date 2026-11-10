@@ -157,7 +157,7 @@ JS = r"""<script id="wf-android-js">
       WF.player(cur?1:0,toc?1:0,vid?1:0,txt('plt'),txt('pls'),pos,dur,cur);
     }catch(e){}
   };
-  ['play','playing','pause','ended','seeked','loadedmetadata','durationchange','emptied'].forEach(function(n){
+    ['play','playing','pause','ended','seeked','loadedmetadata','durationchange','emptied','timeupdate'].forEach(function(n){
     document.addEventListener(n,function(){window.wfRep()},true);
   });
   try{var sp=stopPlayer;stopPlayer=function(){sp.apply(this,arguments);window.wfRep()}}catch(e){}
@@ -180,7 +180,8 @@ JS = r"""<script id="wf-android-js">
   /* ---- 3. Não cola sozinho o que foi copiado (só o botão Colar cola) ---- */
   window.wfClip=function(){};
 
-  setTimeout(window.wfRep,1500);
+    setTimeout(window.wfRep,1500);
+  setInterval(window.wfRep,1000);
 })();
 </script>
 """
