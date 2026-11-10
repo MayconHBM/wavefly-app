@@ -393,13 +393,18 @@ public class PythonService extends Service {
             Bitmap cb = capaBmp;
             if (cb != null && capaDe.equals(pCapa)) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
-            long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
+                        long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
+            long posAtual = pPosMs;
+            if (pTocando && pEm != 0) {
+                posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
+                if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
+            }
             PlaybackState ps = new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                             | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
                             | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
                     .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                            pPosMs, pTocando ? 1f : 0f, em)
+                            posAtual, pTocando ? 1f : 0f, em)
                     .build();
             sessao.setPlaybackState(ps);
         } catch (Throwable t) {
