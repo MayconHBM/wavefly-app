@@ -17,6 +17,8 @@ CSS = """<style id="wf-android-css">
 html body button.pp{background:rgba(0,0,0,.22)!important;border:0!important;border-radius:0!important;
  box-shadow:none!important;color:#fff!important;text-shadow:none!important}
 html body button.pp:active{transform:none!important;box-shadow:none!important}
+.pv video{width:100%;aspect-ratio:16/9;border-radius:14px;background:#000;display:block}
+.pv .pvmsg{padding:14px;text-align:center;color:var(--t-mu,#bbb);font-size:14px}
 </style>
 """
 
@@ -75,15 +77,60 @@ JS = r"""<script id="wf-android-js">
     }
   }catch(e){}
 
-  /* ---- 1b. Prévia de vídeo na busca: abre numa janela do app (o YouTube recusa o endereço local) ---- */
+  /* ---- 1b. Prévia de vídeo na busca, no mesmo lugar de antes, tocando o vídeo direto (sem player do YouTube) ---- */
   window.addEventListener('click',function(e){
     try{
       var b=e.target.closest&&e.target.closest('[data-pv]');
-      if(!b||!window.WF||!WF.preview)return;
+      if(!b||!window.WF||!WF.stream)return;
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-      WF.preview(b.dataset.pv);
+      var id=b.dataset.pv,old=$('.pv'),same=old&&old.dataset.id===id;
+      if(old)old.remove();
+      $$('.pp').forEach(function(x){x.innerHTML=ic('play',18)});
+      if(same)return;
+      var row=b.closest('.rs,.tr');
+      row.insertAdjacentHTML('afterend','<div class="pv" data-id="'+esc(id)+'"><video controls playsinline autoplay></video><div class="pvmsg">Carregando vídeo…</div></div>');
+      b.innerHTML=ic('stop',18);
+      WF.stream(id);
     }catch(x){}
   },true);
+  window.wfStream=function(id,url,err){
+    var pv=document.querySelector('.pv[data-id="'+id+'"]');if(!pv)return;
+    var v=pv.querySelector('video'),m=pv.querySelector('.pvmsg');
+    if(!url){if(m)m.textContent=err||'Não foi possível carregar este vídeo.';return}
+    if(m)m.remove();
+    v.src=url;var p=v.play();if(p&&p.catch)p.catch(function(){});
+  };
+
+  /* ---- 1c. Vídeo continua tocando (só o áudio) quando o app vai para segundo plano ---- */
+  function trocarMidia(tag){
+    try{
+      var a=aud();if(!a||a.tagName.toLowerCase()===tag)return;
+      var t=a.currentTime||0,tocando=!a.paused,src=a.currentSrc||a.src;
+      var n=document.createElement(tag);n.id='au';
+      if(tag==='video')n.setAttribute('playsinline','');
+      n.volume=a.volume;
+      ['onended','onerror','onplay','onpause','ontimeupdate','onloadedmetadata','ondurationchange'].forEach(function(k){n[k]=a[k]});
+      a.onpause=null;a.onended=null;a.onerror=null;a.onplay=null;
+      try{a.pause()}catch(x){}
+      a.parentNode.replaceChild(n,a);
+      n.addEventListener('loadedmetadata',function(){try{n.currentTime=t}catch(x){}if(tocando){var p=n.play();if(p&&p.catch)p.catch(function(){})}},{once:true});
+      n.src=src;n.load();
+    }catch(x){}
+  }
+  function ehVideo(){return typeof CUR!=='undefined'&&/\.(mp4|mkv)$/i.test(CUR||'')}
+  var querTocar=false;
+  document.addEventListener('play',function(e){if(e.target&&e.target.id==='au')querTocar=true},true);
+  document.addEventListener('pause',function(e){
+    if(!e.target||e.target.id!=='au')return;
+    if(document.hidden&&ehVideo()&&querTocar&&!e.target.ended){trocarMidia('audio')}  /* o sistema pausou o vídeo ao sair: continua só com o áudio */
+    else if(!document.hidden)querTocar=false;
+  },true);
+  document.addEventListener('visibilitychange',function(){
+    if(!ehVideo())return;
+    var a=aud();if(!a)return;
+    if(document.hidden){if(!a.paused)trocarMidia('audio')}
+    else if(a.tagName.toLowerCase()==='audio'){trocarMidia('video')}
+  });
 
   /* ---- 2. Avisar o app Android sobre o player (a notificação usa isso) ---- */
   function aud(){return document.getElementById('au')}
@@ -115,7 +162,7 @@ JS = r"""<script id="wf-android-js">
       else if(c==='next')proxima(1);
       else if(c==='prev')proxima(-1);
       else if(c==='stop')stopPlayer();
-      else if(c.indexOf('seek:')===0){if(a)a.currentTime=parseInt(c.slice(5),10)/1000}
+      else if(c.indexOf('seek:')===0){var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200)}}
     }catch(e){}
   };
 

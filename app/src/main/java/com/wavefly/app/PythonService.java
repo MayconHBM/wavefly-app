@@ -315,11 +315,11 @@ public class PythonService extends Service {
             } else {
                 b.setContentText(pSub);
             }
-            b.addAction(acao(ACTION_PREV, android.R.drawable.ic_media_previous, "Anterior", 5));
+            b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, "Anterior", 5));
             b.addAction(acao(ACTION_PLAY_PAUSE,
-                    pTocando ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+                    pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play,
                     pTocando ? "Pausar" : "Tocar", 3));
-            b.addAction(acao(ACTION_NEXT, android.R.drawable.ic_media_next, "Próxima", 4));
+            b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, "Próxima", 4));
             if (baixando) b.addAction(acao(ACTION_CANCEL, 0, "Cancelar download", 2));
             Notification.MediaStyle estilo = new Notification.MediaStyle();
             synchronized (this) {
@@ -340,7 +340,7 @@ public class PythonService extends Service {
         Intent i = new Intent(this, PythonService.class).setAction(action);
         PendingIntent p = PendingIntent.getService(this, codigo, i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Icon icone = iconeRes == 0 ? null : Icon.createWithResource("android", iconeRes);
+        Icon icone = iconeRes == 0 ? null : Icon.createWithResource(this, iconeRes);
         return new Notification.Action.Builder(icone, titulo, p).build();
     }
 
@@ -362,6 +362,10 @@ public class PythonService extends Service {
 
                     @Override
                     public void onSeekTo(long pos) {
+                        Log.i(TAG, "onSeekTo " + pos);
+                        pPosMs = pos;
+                        pEm = SystemClock.elapsedRealtime();
+                        atualizarSessao();
                         MainActivity.comandoPlayer("seek:" + pos);
                     }
 
