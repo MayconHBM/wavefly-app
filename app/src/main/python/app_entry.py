@@ -73,15 +73,25 @@ def resumo():
         baixando = [i for i in itens if i.get("status") == "baixando"]
         fila = [i for i in itens if i.get("status") == "fila"]
         feitos = [i for i in itens if i.get("status") in ("ok", "duplicada", "falha", "cancelada")]
-        atual = baixando[0] if baixando else None
+        atual = next((i for i in baixando if "convert" not in (i.get("vel") or "")), baixando[0] if baixando else None)
         total = len(baixando) + len(fila) + len(feitos)
-        return "%d|%d|%d|%d|%s|%s" % (
+        return "%d|%d|%d|%d|%s|%s|%d" % (
             len(baixando), len(fila), total,
             int(atual.get("pct") or 0) if atual else 0,
             (atual.get("vel") or "") if atual else "",
-            (atual.get("titulo") or "").replace("|", " ") if atual else "")
+            (atual.get("titulo") or "").replace("|", " ") if atual else "",
+            1 if w.PAUSA["on"] else 0)
     except Exception:
-        return "0|0|0|0||"
+        return "0|0|0|0|||0"
+
+
+def pausar(v):
+    """Pausa (ou retoma) a fila de downloads: o que já está baixando termina e o resto espera."""
+    try:
+        import waveflysite as w
+        w.definir_pausa(bool(v))
+    except Exception:
+        traceback.print_exc()
 
 
 def cancelar_tudo():

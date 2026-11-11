@@ -19,6 +19,18 @@ html body button.pp{background:rgba(0,0,0,.22)!important;border:0!important;bord
 html body button.pp:active{transform:none!important;box-shadow:none!important}
 html body .rs.pvon .bd2>.tt:first-child{color:var(--t-ac2,#e46f22)!important;font-weight:700}
 html body .rs.pvcarr .bd2>.tt:first-child{opacity:.6}
+/* aba Buscar: o texto aparecia duplicado por uma sombra preta só nela */
+html body .tabs a.on,html body .tabs a:nth-child(2).on,html body .tabs a[data-go].on,html body .tabs a[href*="buscar"].on,html body .tabs a.on *{text-shadow:none!important}
+/* barras e botões de baixar só aparecem quando há algo selecionado */
+#sbar[hidden],#libbar[hidden],#repbar[hidden],#bgo[hidden],.sel[hidden],.sbar[hidden]{display:none!important}
+/* tela inicial sem o resumo de formato/pasta (isso fica em Ajustes, pela engrenagem) */
+html body #v-baixar .js-chip{display:none!important}
+/* é um aplicativo, não um site: não seleciona nem copia os textos da interface */
+html,body,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,[contenteditable="true"]{-webkit-user-select:text!important;user-select:text!important}
+img{-webkit-user-drag:none}
+/* botão X para tirar um link da lista */
+html body .pr .pvx{flex:none;margin-left:auto;width:34px;height:34px;min-width:34px;padding:0;border-radius:50%;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
 </style>
 """
 
@@ -173,9 +185,13 @@ JS = r"""<script id="wf-android-js">
       else if(c==='next')proxima(1);
       else if(c==='prev')proxima(-1);
       else if(c==='stop')stopPlayer();
-      else if(c.indexOf('seek:')===0){try{toast('[teste] Comando de pular chegou na página')}catch(x){}var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200);try{toast('[teste] Player pulou para '+tf(ms/1000))}catch(x){}}}
+      else if(c.indexOf('seek:')===0){var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200)}}
     }catch(e){}
   };
+
+  /* ---- a prévia da busca para quando a pesquisa é apagada ---- */
+  ['qx','scl'].forEach(function(id){var e=document.getElementById(id);if(e)e.addEventListener('click',function(){pvStop()},true)});
+  var qq=document.getElementById('q');if(qq)qq.addEventListener('input',function(){if(!qq.value.trim())pvStop()});
 
   /* ---- 3. Não cola sozinho o que foi copiado (só o botão Colar cola) ---- */
   window.wfClip=function(){};
@@ -251,15 +267,23 @@ def rotas(w):
         try:
             from urllib.parse import urlparse, parse_qs
             u = urlparse(self.path)
-            if u.path in ("/api/combina", "/api/ytdlp") and self._host_ok():
+            if u.path in ("/api/combina", "/api/ytdlp", "/api/pausa", "/api/dev") and self._host_ok():
                 q = parse_qs(u.query)
+                if u.path == "/api/pausa":
+                    if (q.get("v") or [""])[0] in ("0", "1"):
+                        w.definir_pausa((q.get("v") or ["0"])[0] == "1")
+                    return self._json({"pausado": bool(w.PAUSA["on"])})
+                if u.path == "/api/dev":
+                    if (q.get("rapido") or [""])[0] in ("0", "1"):
+                        w.definir_rapido((q.get("rapido") or ["0"])[0] == "1")
+                    if (q.get("limpar") or [""])[0]:
+                        with w.DEV_LOCK:
+                            w.DEV["log"].clear()
+                            w.DEV["medidas"].clear()
+                    return self._json(w.dev_estado())
                 if u.path == "/api/combina":
                     import wavefly_recs
-                    try:
-                        pg = max(0, int((q.get("pg") or ["0"])[0]))
-                    except ValueError:
-                        pg = 0
-                    return self._json(wavefly_recs.sugestoes(w, pg, 5))
+                    return self._json(wavefly_recs.proximas(w, 4))
                 import app_entry
                 res = ""
                 if (q.get("forcar") or [""])[0]:

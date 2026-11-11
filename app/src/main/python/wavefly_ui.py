@@ -101,6 +101,18 @@ DICT = [
     ("Não foi possível carregar as sugestões agora.", "Could not load suggestions right now.", "No se pudieron cargar las sugerencias ahora."),
     ("Não mostrar este aviso novamente", "Don't show this notice again", "No mostrar este aviso de nuevo"),
     ("Como usar", "How to use", "Cómo usar"),
+    ("Pausar tudo", "Pause all", "Pausar todo"), ("Continuar", "Resume", "Continuar"),
+    ("Downloads pausados.", "Downloads paused.", "Descargas en pausa."), ("Registro copiado", "Log copied", "Registro copiado"),
+    ("Informações", "Info", "Información"), ("Conversão", "Conversion", "Conversión"), ("Espera", "Wait", "Espera"),
+    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Amostra", "Sample", "Muestra"),
+    ("Sem medidas ainda. Baixe algumas músicas.", "No measurements yet. Download a few songs.", "Aún sin mediciones. Descarga algunas canciones."),
+    ("Falhas", "Failures", "Fallos"), ("Bateria", "Battery", "Batería"), ("Memória do app", "App memory", "Memoria de la app"),
+    ("Rede", "Network", "Red"), ("Sem eventos.", "No events.", "Sin eventos."), ("Desenvolvedor", "Developer", "Desarrollador"),
+    ("Esconder", "Hide", "Ocultar"), ("Painel do desenvolvedor", "Developer panel", "Panel de desarrollador"),
+    ("Download mais rápido", "Faster download", "Descarga más rápida"), ("Copiar registro", "Copy log", "Copiar registro"),
+    ("Anterior", "Previous", "Anterior"), ("Ouvir", "Listen", "Escuchar"),
+    ("Transmissão ao vivo: não dá para baixar", "Live stream: it can't be downloaded", "Transmisión en vivo: no se puede descargar"),
+    ("Remover", "Remove", "Quitar"),
 ]
 
 # padrões com números: (regex em português, inglês, espanhol)
@@ -162,18 +174,30 @@ html[lang="es"] body .tabs a{font-size:13px;letter-spacing:-.2px}
 #wfcomb .wfh{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #wfcomb h2{margin:0;font-size:18px}
 #wfcomb .wfs{font-size:12.5px;opacity:.7;margin:2px 0 8px}
-#wfcomb .wfar{display:flex;gap:6px}
-#wfcomb .wfar button{width:34px;height:34px;padding:0;border-radius:50%;font-size:20px;line-height:1}
-#wfcomb .wftr{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 2px 8px;-webkit-overflow-scrolling:touch}
-#wfcomb .wftr::-webkit-scrollbar{display:none}
-#wfcomb .wfc{flex:none;width:min(64%,230px);scroll-snap-align:start;border-radius:14px;background:rgba(127,110,90,.14);overflow:hidden;display:flex;flex-direction:column}
-#wfcomb .wfc img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:rgba(0,0,0,.2)}
-#wfcomb .wfc .wfb{padding:8px 10px 10px;display:flex;flex-direction:column;gap:3px;flex:1}
-#wfcomb .wfc .wfn{font-weight:700;font-size:13.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#wfcomb .wfc .wfa{font-size:12px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#wfcomb .wfc button{margin-top:auto;width:100%}
-#wfcomb .wfm{font-size:13px;opacity:.75;padding:10px 2px}
+#wfcomb .wfbox{display:flex;align-items:stretch;gap:6px}
+#wfcomb .wfnav{flex:none;width:30px;align-self:center;height:56px;padding:0;border-radius:14px;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center}
+#wfcomb .wfnav[disabled]{opacity:.3}
+#wfcomb .wfgrid{flex:1;min-width:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:8px;min-height:150px}
+#wfcomb .wfc{min-width:0;border-radius:14px;background:rgba(127,110,90,.14);overflow:hidden;display:flex;flex-direction:column}
+#wfcomb .wfth{position:relative;width:100%;aspect-ratio:16/9;background:rgba(0,0,0,.2);overflow:hidden}
+#wfcomb .wfth img{width:100%;height:100%;object-fit:cover;display:block}
+#wfcomb .wfb{padding:6px 7px 8px;display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+#wfcomb .wfn{font-weight:700;font-size:12px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.4em}
+#wfcomb .wfa{font-size:11px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wfcomb .wfc .wfd{margin-top:5px;width:100%;padding:7px 4px;font-size:12.5px}
+#wfcomb .wfm{grid-column:1/3;font-size:13px;opacity:.75;padding:20px 4px;text-align:center}
 .wfver{font-size:12.5px;opacity:.75;margin:6px 0 0}
+#wfdev{position:fixed;inset:0;z-index:99998;background:var(--t-bg,#e8dcc2);color:#3b2314;overflow-y:auto;padding:16px 16px 40px;-webkit-overflow-scrolling:touch}
+#wfdev h2{margin:0 0 4px;font-size:20px}
+#wfdev .wfbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+#wfdev .wfcx{background:rgba(127,110,90,.16);border-radius:14px;padding:12px 14px;margin:10px 0}
+#wfdev .wfcx h3{margin:0 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+#wfdev table{width:100%;border-collapse:collapse;font-size:14px}
+#wfdev td{padding:3px 0}#wfdev td:last-child{text-align:right;font-weight:700}
+#wfdev .wflog{font:11.5px/1.35 monospace;max-height:320px;overflow-y:auto;background:rgba(0,0,0,.08);border-radius:10px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
+#wfdev .wfbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+#wfdev .wfbtns button{flex:1 1 auto}
+.wfpb{margin:0 2px}
 </style>
 """
 
@@ -206,20 +230,22 @@ function trans(raw,lang){
   return out===null?raw:lead+out+trail}
 var BUSY=false;
 function doText(n){
-  var v=n.nodeValue;
-  if(n.__wft!==undefined&&v===n.__wft)return;
-  n.__wfo=v;
-  var o=trans(v,LANG);
-  if(o!==v){n.__wft=o;n.nodeValue=o}else n.__wft=undefined}
-function restoreText(n){if(n.__wft!==undefined&&n.__wfo!==undefined){n.nodeValue=n.__wfo;n.__wft=undefined}}
+  var v=n.nodeValue,base;
+  if(n.__wft!==undefined&&v===n.__wft)base=n.__wfo;
+  else{base=v;n.__wfo=v}
+  var o=trans(base,LANG);
+  n.__wft=(o!==base)?o:undefined;
+  if(o!==v)n.nodeValue=o}
 var ATTRS=['placeholder','aria-label','title'];
 function doAttr(e){
   ATTRS.forEach(function(a){
     if(!e.hasAttribute||!e.hasAttribute(a))return;
-    var k='wfo_'+a,cur=e.getAttribute(a);
-    if(e[k+'_t']!==undefined&&cur===e[k+'_t'])return;
-    e[k]=cur;var o=trans(cur,LANG);
-    if(o!==cur){e[k+'_t']=o;e.setAttribute(a,o)}else e[k+'_t']=undefined})}
+    var k='wfo_'+a,t=k+'_t',cur=e.getAttribute(a),base;
+    if(e[t]!==undefined&&cur===e[t])base=e[k];
+    else{base=cur;e[k]=cur}
+    var o=trans(base,LANG);
+    e[t]=(o!==base)?o:undefined;
+    if(o!==cur)e.setAttribute(a,o)})}
 function walk(root,fn,afn){
   if(root.nodeType===3){fn(root);return}
   if(root.nodeType!==1&&root.nodeType!==9&&root.nodeType!==11)return;
@@ -227,11 +253,11 @@ function walk(root,fn,afn){
   var c=root.firstChild;while(c){walk(c,fn,afn);c=c.nextSibling}}
 function applyAll(){
   BUSY=true;
-  try{walk(document.body,LANG==='pt'?restoreText:doText,LANG==='pt'?function(e){ATTRS.forEach(function(a){var k='wfo_'+a;if(e[k+'_t']!==undefined&&e.getAttribute(a)===e[k+'_t']){e.setAttribute(a,e[k]);e[k+'_t']=undefined}})}:doAttr)}catch(e){}
+  try{walk(document.body,doText,doAttr)}catch(e){}
   BUSY=false;
   document.documentElement.lang=LANG==='pt'?'pt-BR':LANG}
 var MO=new MutationObserver(function(ms){
-  if(BUSY||LANG==='pt'){return}
+  if(BUSY){return}
   BUSY=true;
   try{ms.forEach(function(m){
     if(m.type==='characterData'){doText(m.target)}
@@ -245,28 +271,21 @@ function setLang(l){
   applyAll();
   document.querySelectorAll('[data-wflang]').forEach(function(b){b.classList.toggle('on',b.dataset.wflang===l)});
   try{if(typeof tick==='function')tick()}catch(e){}
-  if(comb.pronto)combRender(true)}
+  if(comb.paginas.length)combRender();if(window.wfPausaRender)window.wfPausaRender()}
 
-/* ---------- Ajustes: idioma, botão flutuante, atualizações ---------- */
+/* ---------- Ajustes: idioma e atualizações ---------- */
 function mk(h){var d=document.createElement('div');d.innerHTML=h;return d.firstChild}
 var pn=document.querySelector('#sheet .spn'),ref=document.getElementById('srvnote');
+var DEVON=false;try{DEVON=wfget('dev')==='1'}catch(e){}
+function info(){fetch('/api/ytdlp').then(function(r){return r.json()}).then(function(j){
+  var a=W&&W.versaoApp?W.versaoApp():'';
+  var el=document.getElementById('wfv2');if(el)el.textContent='WaveFly '+(a?('v'+a):'')+' · yt-dlp '+(j.versao||'?')}).catch(function(){})}
 if(pn){
   var g1=mk('<div class="g" id="wf-g-lang"><span class="l">Idioma / Language</span><div class="sg full">'+
     NAT.map(function(n){return '<button data-wflang="'+n[0]+'">'+n[1]+'</button>'}).join('')+'</div></div>');
   pn.insertBefore(g1,ref);
   g1.querySelectorAll('button').forEach(function(b){b.onclick=function(){setLang(b.dataset.wflang)};b.classList.toggle('on',b.dataset.wflang===LANG)});
-  if(W&&typeof W.bolhaEstado==='function'){
-    var g2=mk('<div class="g" id="wf-g-bolha"><span class="l">Botão flutuante</span><div class="wfrow"><span class="wft">Ativar botão flutuante</span><label class="wfsw"><input type="checkbox" id="wfbolha"><i></i></label></div><p class="note">Fica sobre os outros apps: copie o link do vídeo e toque nele para baixar.</p></div>');
-    pn.insertBefore(g2,ref);
-    var sw=g2.querySelector('input');sw.checked=W.bolhaEstado()==='1';
-    sw.onchange=function(){
-      if(!sw.checked){W.bolha(0);return}
-      sw.checked=false;
-      var ativar=function(){var r=W.bolha(1);if(r==='perm'){toast(T('Libere "Aparecer sobre outros apps" para o WaveFly e volte.'))}else sw.checked=true};
-      if(wfget('bolha_aviso')==='1')ativar();else aviso(ativar)};
-    window.wfBolha=function(on){sw.checked=!!on};
-  }
-  var g3=mk('<div class="g" id="wf-g-up"><span class="l">Atualizações</span><button class="rb" id="wfup"><span>Procurar atualizações</span><span class="r"><b id="wfv1"></b></span></button><p class="wfver" id="wfv2"></p></div>');
+  var g3=mk('<div class="g" id="wf-g-up"><span class="l">Atualizações</span><button class="rb" id="wfup"><span>Procurar atualizações</span></button><p class="wfver" id="wfv2"></p><div id="wfdevg" hidden><span class="l" style="margin-top:12px;display:block">Desenvolvedor</span><button class="rb" id="wfdevopen"><span>Painel do desenvolvedor</span></button><button class="t" id="wfdevoff" style="margin-top:4px">Esconder</button></div></div>');
   pn.insertBefore(g3,ref);
   g3.querySelector('#wfup').onclick=function(){
     if(W&&W.verificarAtualizacao)W.verificarAtualizacao();
@@ -276,55 +295,104 @@ if(pn){
       else if(m.indexOf('erro')===0)toast(LANG==='en'?'Could not check yt-dlp now.':LANG==='es'?'No se pudo comprobar yt-dlp ahora.':'Não consegui verificar o yt-dlp agora.');
       else toast(LANG==='en'?'yt-dlp is up to date.':LANG==='es'?'yt-dlp está al día.':'yt-dlp está em dia.');
       info()}).catch(function(){})};
-  function info(){fetch('/api/ytdlp').then(function(r){return r.json()}).then(function(j){
-    var a=W&&W.versaoApp?W.versaoApp():'';
-    document.getElementById('wfv1').textContent=a?('v'+a):'';
-    document.getElementById('wfv2').textContent='yt-dlp '+(j.versao||'?')}).catch(function(){})}
   info();
+  /* 7 toques na linha de versão abrem o modo desenvolvedor */
+  var tq=0,tt=0,vl=g3.querySelector('#wfv2'),dg=g3.querySelector('#wfdevg');
+  dg.hidden=!DEVON;
+  vl.addEventListener('click',function(){var n=Date.now();if(n-tt>1500)tq=0;tt=n;tq++;
+    if(tq>=7){tq=0;DEVON=true;wfset('dev','1');dg.hidden=false;toast(LANG==='en'?'Developer mode on':LANG==='es'?'Modo desarrollador activado':'Modo desenvolvedor ativado')}});
+  g3.querySelector('#wfdevoff').onclick=function(){DEVON=false;wfset('dev','');dg.hidden=true};
+  g3.querySelector('#wfdevopen').onclick=function(){devAbrir()};
 }
-function aviso(depois){
-  var m=mk('<div class="wfmodal"><div class="wfcard"><h3>'+T('Botão flutuante')+'</h3>'+
-   '<p>'+({pt:'O botão flutuante fica na tela para capturar links do YouTube com um toque e fazer downloads em segundo plano.',en:'The floating button stays on screen to capture YouTube links with one tap and download in the background.',es:'El botón flotante se queda en pantalla para capturar enlaces de YouTube con un toque y descargar en segundo plano.'})[LANG]+'</p>'+
-   '<p><b>'+T('Como usar')+':</b> '+({pt:'abra um vídeo no YouTube, toque em Compartilhar › Copiar link e toque no botão flutuante para iniciar o download. Para desativar, mantenha o botão pressionado e confirme no menu de encerramento.',en:'open a video on YouTube, tap Share › Copy link, then tap the floating button to start the download. To turn it off, press and hold the button and confirm in the menu.',es:'abre un vídeo en YouTube, toca Compartir › Copiar enlace y toca el botón flotante para iniciar la descarga. Para desactivarlo, mantén pulsado el botón y confirma en el menú.'})[LANG]+'</p>'+
-   '<label><input type="checkbox" id="wfnm"> <span>'+T('Não mostrar este aviso novamente')+'</span></label>'+
-   '<button class="p wfok">'+T('Entendi')+'</button></div></div>');
-  document.body.appendChild(m);
-  m.querySelector('.wfok').onclick=function(){if(m.querySelector('#wfnm').checked)wfset('bolha_aviso','1');m.remove();depois()}}
 
-/* ---------- Combina com você ---------- */
-var comb={pg:0,itens:[],mais:true,busy:false,pronto:false,box:null};
+/* ---------- Pausar tudo (fila de downloads) ---------- */
+var PAUSADO=false;
+(function(){
+  var bc=document.getElementById('bcanc');if(!bc)return;
+  var bp=mk('<button class="t wfpb" id="bpausa">Pausar tudo</button>');bc.parentNode.insertBefore(bp,bc);
+  function pinta(){bp.textContent=PAUSADO?T('Continuar'):T('Pausar tudo')}
+  bp.onclick=function(){fetch('/api/pausa?v='+(PAUSADO?0:1)).then(function(r){return r.json()}).then(function(j){PAUSADO=!!j.pausado;pinta();try{tick()}catch(e){}}).catch(function(){})};
+  function ler(){if(document.hidden)return;var f=document.getElementById('fila');if(f&&f.hidden&&!PAUSADO)return;
+    fetch('/api/pausa').then(function(r){return r.json()}).then(function(j){if(!!j.pausado!==PAUSADO){PAUSADO=!!j.pausado}pinta()}).catch(function(){})}
+  setInterval(ler,2500);ler();
+  window.wfPausaRender=pinta;
+})();
+
+/* ---------- Painel do desenvolvedor ---------- */
+var DEVT=null;
+function aplicaRapido(){try{if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')}catch(e){}}
+aplicaRapido();
+function devAbrir(){
+  if(document.getElementById('wfdev'))return;
+  var d=mk('<div id="wfdev"><div class="wfbar"><h2>Desenvolvedor</h2><button class="t" id="wfdx">Fechar</button></div>'+
+    '<div class="wfcx"><div class="wfrow"><span class="wft">Download mais rápido</span><label class="wfsw"><input type="checkbox" id="wfrap"><i></i></label></div>'+
+    '<p class="note" id="wfmodo"></p><p class="note">Vale para downloads em MP3: converte uma música enquanto baixa a próxima e usa esperas curtas. Se o YouTube bloquear, volta sozinho ao ritmo normal.</p></div>'+
+    '<div class="wfcx"><h3>Tempo médio por música</h3><table id="wftb"></table></div>'+
+    '<div class="wfcx"><h3>Contagem</h3><table id="wfct"></table></div>'+
+    '<div class="wfcx"><h3>Aparelho</h3><table id="wfap"></table></div>'+
+    '<div class="wfcx"><h3>Registro</h3><div class="wflog" id="wflg"></div><div class="wfbtns"><button id="wfcp">Copiar registro</button><button id="wflp">Limpar</button></div></div></div>');
+  document.body.appendChild(d);
+  var sw=d.querySelector('#wfrap');
+  sw.onchange=function(){wfset('dev_rapido',sw.checked?'1':'');fetch('/api/dev?rapido='+(sw.checked?1:0)).then(function(){devAtualiza()})};
+  d.querySelector('#wfdx').onclick=function(){clearInterval(DEVT);DEVT=null;d.remove()};
+  d.querySelector('#wflp').onclick=function(){fetch('/api/dev?limpar=1').then(function(){devAtualiza()})};
+  d.querySelector('#wfcp').onclick=function(){var t=d.querySelector('#wflg').dataset.txt||'';
+    try{if(W&&W.copiar){W.copiar(t);toast(T('Registro copiado'));return}}catch(e){}
+    try{var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast(T('Registro copiado'))}catch(e){}};
+  devAtualiza();DEVT=setInterval(devAtualiza,2000);
+}
+function lin(a,b){return '<tr><td>'+a+'</td><td>'+b+'</td></tr>'}
+function devAtualiza(){
+  var d=document.getElementById('wfdev');if(!d)return;
+  fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
+    var sw=d.querySelector('#wfrap');sw.checked=!!j.rapido;
+    var modo=j.freio?{pt:'Freio ativo: voltou ao ritmo normal por causa de um bloqueio.',en:'Brake on: back to normal speed because of a block.',es:'Freno activo: volvió al ritmo normal por un bloqueo.'}[LANG]:j.rapido?{pt:'Modo rápido em uso.',en:'Fast mode in use.',es:'Modo rápido en uso.'}[LANG]:{pt:'Modo normal.',en:'Normal mode.',es:'Modo normal.'}[LANG];
+    var mm=d.querySelector('#wfmodo');mm.textContent=modo+(j.pausado?(' '+T('Downloads pausados.')):'');
+    var m=j.medias||{};
+    d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
+    var c=j.cont||{};
+    d.querySelector('#wfct').innerHTML=lin(T('Concluídas'),j.ok)+lin(T('Falhas'),j.falha)+lin(T('Na fila'),c.fila||0)+lin('Baixando',c.baixando||0)+lin(T('Repetidas'),c.duplicada||0);
+    var lg=(j.log||[]).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}).join('\n');
+    var el=d.querySelector('#wflg');el.textContent=lg||T('Sem eventos.');el.dataset.txt=lg;
+    var ap='';try{if(W&&W.info){var i=JSON.parse(W.info());ap=lin(T('Bateria'),i.bat+'%'+(i.carregando?' ⚡':''))+lin(T('Memória do app'),i.memMb+' MB')+lin(T('Rede'),i.rede)}}catch(e){}
+    d.querySelector('#wfap').innerHTML=ap||lin('—','—')}).catch(function(){})}
+
+/* ---------- Combina com você: quadrado de 4 sugestões ---------- */
+var comb={paginas:[],idx:-1,busy:false,fim:false,box:null};
 function combBox(){
   if(comb.box)return comb.box;
   var bgo=document.getElementById('bgo');if(!bgo)return null;
-  var b=mk('<div id="wfcomb" hidden><div class="wfh"><h2>Combina com você</h2><div class="wfar"><button class="s2" id="wfcl" aria-label="Anterior">‹</button><button class="s2" id="wfcr" aria-label="Próxima">›</button></div></div><div class="wfs">Sugestões a partir das suas músicas. Tudo fica neste aparelho.</div><div class="wftr" id="wftr"></div></div>');
+  var b=mk('<div id="wfcomb" hidden><div class="wfh"><h2>Combina com você</h2></div><div class="wfs">Sugestões a partir das suas músicas. Tudo fica neste aparelho.</div>'+
+    '<div class="wfbox"><button class="wfnav" id="wfcl" aria-label="Anterior">‹</button><div class="wfgrid" id="wfgrid"></div><button class="wfnav" id="wfcr" aria-label="Próxima">›</button></div></div>');
   bgo.parentNode.insertBefore(b,bgo.nextSibling);
-  b.querySelector('#wfcl').onclick=function(){b.querySelector('#wftr').scrollBy({left:-(b.querySelector('.wfc')||{offsetWidth:220}).offsetWidth-10,behavior:'smooth'})};
-  b.querySelector('#wfcr').onclick=function(){var tr=b.querySelector('#wftr'),w=(b.querySelector('.wfc')||{offsetWidth:220}).offsetWidth+10;
-    if(tr.scrollLeft+tr.clientWidth>=tr.scrollWidth-w*1.2&&comb.mais)combMais();tr.scrollBy({left:w,behavior:'smooth'})};
-  b.querySelector('#wftr').addEventListener('scroll',function(){var tr=this;if(tr.scrollLeft+tr.clientWidth>=tr.scrollWidth-40&&comb.mais)combMais()},{passive:true});
+  b.querySelector('#wfcl').onclick=function(){if(comb.idx>0){comb.idx--;combRender()}};
+  b.querySelector('#wfcr').onclick=function(){
+    if(comb.idx+1<comb.paginas.length){comb.idx++;combRender();return}
+    combMais()};
   comb.box=b;return b}
 function combRender(){
   var b=combBox();if(!b)return;
-  var tr=b.querySelector('#wftr');
-  if(!comb.itens.length){tr.innerHTML=comb.busy?'<div class="wfm">'+T('Procurando sugestões…')+'</div>':'';b.hidden=!comb.busy;return}
+  var g=b.querySelector('#wfgrid'),pg=comb.paginas[comb.idx];
+  b.querySelector('#wfcl').disabled=comb.idx<=0;
+  b.querySelector('#wfcr').disabled=comb.busy||(comb.fim&&comb.idx>=comb.paginas.length-1);
+  if(!pg){g.innerHTML=comb.busy?'<div class="wfm">'+T('Procurando sugestões…')+'</div>':'';b.hidden=!comb.busy;return}
   b.hidden=false;
-  tr.innerHTML=comb.itens.map(function(e){return '<div class="wfc" data-id="'+e.id+'"><img loading="lazy" src="https://i.ytimg.com/vi/'+e.id+'/mqdefault.jpg" alt=""><div class="wfb"><div class="wfn"></div><div class="wfa"></div><button class="a" data-wfd="'+e.id+'">'+T('Baixar')+'</button></div></div>'}).join('');
-  [].forEach.call(tr.querySelectorAll('.wfc'),function(c,i){c.querySelector('.wfn').textContent=comb.itens[i].titulo;c.querySelector('.wfa').textContent=comb.itens[i].canal||''});
-  [].forEach.call(tr.querySelectorAll('button[data-wfd]'),function(bt){bt.onclick=function(){
-    var id=bt.dataset.wfd,e=comb.itens.filter(function(x){return x.id===id})[0],t={};t[id]=e?e.titulo:'';
+  g.innerHTML=pg.map(function(e){return '<div class="wfc" data-id="'+e.id+'"><div class="wfth"><img loading="lazy" src="https://i.ytimg.com/vi/'+e.id+'/mqdefault.jpg" alt=""><button type="button" class="pp" data-pv="'+e.id+'" aria-label="Ouvir">'+(typeof ic==='function'?ic('play',18):'▶')+'</button></div><div class="wfb"><div class="wfn"></div><div class="wfa"></div><button class="a wfd" data-wfd="'+e.id+'">'+T(e.baixada?'Adicionada':'Baixar')+'</button></div></div>'}).join('');
+  [].forEach.call(g.querySelectorAll('.wfc'),function(c,i){c.querySelector('.wfn').textContent=pg[i].titulo;c.querySelector('.wfa').textContent=pg[i].canal||'';
+    var bt=c.querySelector('.wfd');if(pg[i].baixada)bt.disabled=true});
+  [].forEach.call(g.querySelectorAll('button[data-wfd]'),function(bt){bt.onclick=function(){
+    var id=bt.dataset.wfd,e=pg.filter(function(x){return x.id===id})[0],t={};t[id]=e?e.titulo:'';
     bt.disabled=true;
     api('/api/add',{texto:'https://www.youtube.com/watch?v='+id,titulos:t}).then(function(r){
       try{toast(msgAdd(r))}catch(x){}
-      bt.textContent=T('Adicionada');
-      comb.itens=comb.itens.filter(function(x){return x.id!==id});
-      setTimeout(function(){combRender()},700);
+      if(e)e.baixada=true;bt.textContent=T('Adicionada');
       try{tick()}catch(x){}}).catch(function(err){bt.disabled=false;toast(err.message)})}})}
-function combMais(){if(comb.busy||!comb.mais)return;comb.busy=true;
-  fetch('/api/combina?pg='+comb.pg).then(function(r){return r.json()}).then(function(j){
-    comb.busy=false;comb.pronto=true;
-    if(j.itens&&j.itens.length){comb.itens=comb.itens.concat(j.itens);comb.pg++}
-    comb.mais=!!j.mais&&j.itens&&j.itens.length>0;
-    combRender()}).catch(function(){comb.busy=false;comb.mais=false;combRender()})}
+function combMais(){if(comb.busy)return;comb.busy=true;combRender();
+  fetch('/api/combina').then(function(r){return r.json()}).then(function(j){
+    comb.busy=false;
+    if(j.itens&&j.itens.length){comb.paginas.push(j.itens);comb.idx=comb.paginas.length-1}
+    else comb.fim=true;
+    combRender()}).catch(function(){comb.busy=false;comb.fim=true;combRender()})}
 setTimeout(function(){combBox();combMais()},2500);
 
 setLang(LANG);

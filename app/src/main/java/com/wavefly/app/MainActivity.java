@@ -312,6 +312,40 @@ public class MainActivity extends AppCompatActivity {
             Idioma.prefs(MainActivity.this).edit().putString("p_" + k, v).apply();
         }
 
+        /** Bateria, memória do app e rede (para o painel do desenvolvedor). */
+        @JavascriptInterface
+        public String info() {
+            try {
+                android.content.Intent b = registerReceiver(null,
+                        new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                int nivel = b == null ? -1 : b.getIntExtra("level", -1), esc = b == null ? 100 : b.getIntExtra("scale", 100);
+                int st = b == null ? 0 : b.getIntExtra("status", 0);
+                boolean carregando = st == 2 || st == 5;
+                android.os.Debug.MemoryInfo mi = new android.os.Debug.MemoryInfo();
+                android.os.Debug.getMemoryInfo(mi);
+                String rede = "?";
+                android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                android.net.NetworkInfo ni = cm == null ? null : cm.getActiveNetworkInfo();
+                if (ni != null && ni.isConnected()) rede = ni.getType() == android.net.ConnectivityManager.TYPE_WIFI ? "Wi-Fi" : "móvel";
+                else rede = "offline";
+                return "{\"bat\":" + (nivel < 0 ? 0 : nivel * 100 / Math.max(1, esc)) + ",\"carregando\":" + carregando
+                        + ",\"memMb\":" + (mi.getTotalPss() / 1024) + ",\"rede\":\"" + rede + "\"}";
+            } catch (Throwable t) {
+                return "{\"bat\":0,\"carregando\":false,\"memMb\":0,\"rede\":\"?\"}";
+            }
+        }
+
+        @JavascriptInterface
+        public void copiar(final String texto) {
+            runOnUiThread(() -> {
+                try {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("WaveFly", texto));
+                } catch (Throwable ignored) {
+                }
+            });
+        }
+
         @JavascriptInterface
         public void verificarAtualizacao() {
             runOnUiThread(() -> Atualizador.verificar(MainActivity.this, true));

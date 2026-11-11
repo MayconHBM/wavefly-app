@@ -373,10 +373,19 @@ def guardar_tit(vid, e):
         TIT_CACHE[vid] = {"titulo": t, "canal": e.get("channel") or e.get("uploader") or ""}
 
 
-def titulo_rapido(vid):
+def eh_ao_vivo(vid):
+    try:
+        with yt_dlp.YoutubeDL(dict(OPTS, skip_download=True, socket_timeout=15, extract_flat=False)) as ydl:
+            info = ydl.extract_info("https://www.youtube.com/watch?v=" + vid, download=False, process=False)
+        return bool(info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"))
+    except Exception:
+        return False
+
+
+def titulo_rapido(vid, checar_live=False):
     if not re.fullmatch(r"[\w-]{11}", vid or ""):
         raise ValueError("Vídeo inválido")
-    if vid in TIT_CACHE:
+    if vid in TIT_CACHE and (not checar_live or "live" in TIT_CACHE[vid]):
         return TIT_CACHE[vid]
     url = "https://www.youtube.com/watch?v=" + vid
     t = None
@@ -399,6 +408,8 @@ def titulo_rapido(vid):
             return {"titulo": "", "canal": ""}
     if not t["titulo"]:
         return t
+    if checar_live:
+        t["live"] = eh_ao_vivo(vid)
     if len(TIT_CACHE) > 3000:
         TIT_CACHE.clear()
     TIT_CACHE[vid] = t
@@ -873,11 +884,16 @@ def baixar(it, info, nome, destino):
         if it["cancel"]:
             raise RuntimeError("cancelado_pelo_usuario")
         if d["status"] == "downloading":
+            it.setdefault("_td", time.monotonic())
             tot = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             it["pct"] = round((d.get("downloaded_bytes") or 0) / tot * 100) if tot else 0
             it["vel"] = tam_fmt(d.get("speed") or 0) + "/s"
         elif d["status"] == "finished":
+            it.setdefault("_tf", time.monotonic())
             it["pct"], it["vel"] = 100, ("convertendo…" if it["fmt"] == "mp3" else "juntando…" if it["fmt"] == "video" else "")
+            if it.get("_rap") and it.get("_rede"):
+                rede_soltar(it)     # a rede já está livre: o próximo download pode começar enquanto este converte
+                conv_pegar(it)
 
     ext_orig = (info.get("ext") or "").lower()
 
@@ -940,9 +956,109 @@ def rel_do_arquivo(destino, nome, exts):
     return ""
 
 
+# --------------------------------------------------------------------------- pausa / modo rápido / registro
+PAUSA = {"on": False}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 1.5, "ult_rede": 0.0, "ok": 0, "falha": 0}
+DEV_LOCK = threading.Lock()
+REDE = threading.Semaphore(1)   # só um download de rede por vez (o YouTube vê o mesmo ritmo de pedidos)
+CONV = threading.Semaphore(1)   # só uma conversão por vez
+
+
+def dev_log(tipo, msg):
+    with DEV_LOCK:
+        DEV["log"].append({"t": time.strftime("%H:%M:%S"), "tipo": tipo, "msg": str(msg)[:400]})
+        del DEV["log"][:-200]
+
+
+def rapido_ligado():
+    return bool(DEV["rapido"] and not DEV["freio"])
+
+
+def definir_pausa(v):
+    PAUSA["on"] = bool(v)
+    dev_log("pausa", "Downloads pausados" if PAUSA["on"] else "Downloads retomados")
+    aviso("⏸️ Downloads pausados. A música em andamento termina antes de parar." if PAUSA["on"] else "")
+
+
+def definir_rapido(v):
+    DEV["rapido"] = bool(v)
+    if v:
+        DEV["freio"] = False
+    dev_log("modo", "Download mais rápido " + ("ligado" if v else "desligado"))
+
+
+def acionar_freio(motivo):
+    if DEV["rapido"] and not DEV["freio"]:
+        DEV["freio"] = True
+        dev_log("freio", "Voltando ao ritmo normal: " + motivo)
+
+
+def _pegar(sem, it, chave):
+    while not sem.acquire(timeout=0.5):
+        if it["cancel"]:
+            raise RuntimeError("cancelado_pelo_usuario")
+    it[chave] = True
+
+
+def rede_pegar(it):
+    _pegar(REDE, it, "_rede")
+    espera = DEV["gap"] - (time.time() - DEV["ult_rede"])
+    if espera > 0:
+        esperar(espera, lambda: it["cancel"])
+    if it["cancel"]:
+        rede_soltar(it)
+        raise RuntimeError("cancelado_pelo_usuario")
+
+
+def rede_soltar(it):
+    if it.pop("_rede", False):
+        DEV["ult_rede"] = time.time()
+        REDE.release()
+
+
+def conv_pegar(it):
+    _pegar(CONV, it, "_conv")
+
+
+def conv_soltar(it):
+    if it.pop("_conv", False):
+        CONV.release()
+
+
+def dev_estado():
+    with DEV_LOCK:
+        med = list(DEV["medidas"][-20:])
+        log = list(DEV["log"][-80:])
+    n = len(med)
+    media = {k: (round(sum(m[k] for m in med) / n, 1) if n else 0) for k in ("info", "dl", "conv", "espera", "total")}
+    with LOCK:
+        c = {}
+        for i in ITENS:
+            c[i["status"]] = c.get(i["status"], 0) + 1
+    return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": media, "n": n,
+            "por_hora": round(3600 / media["total"]) if media["total"] else 0,
+            "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log}
+
+
 def processar(it):
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
+    it.pop("_td", None)
+    it.pop("_tf", None)
+    it["_rap"] = bool(rapido_ligado() and it.get("fmt") == "mp3")
+    it["_t"] = {"ini": time.monotonic(), "espera": 0.0}
+    try:
+        _processar(it)
+    finally:
+        rede_soltar(it)
+        conv_soltar(it)
+
+
+def _processar(it):
+    t_ini = it["_t"]["ini"]
+    if it["_rap"]:
+        rede_pegar(it)
+        it["_t"]["espera"] = time.monotonic() - t_ini
     titulo_preview = it.get("titulo") or ""
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     try:
@@ -960,6 +1076,8 @@ def processar(it):
     else:
         # se já tinha titulo do preview, usa ele como base do arquivo pra não ficar com nome do link
         pass
+    if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+        raise RuntimeError("AO_VIVO")
     it["vel"] = "Baixando…"
     if info.get("duration"):
         it["dur"] = info["duration"]
@@ -980,10 +1098,15 @@ def processar(it):
     it["destino"] = os.path.join(r, it["sub"]) if it["sub"] else r
     it["pct"] = 0
     t0 = time.monotonic()
+    it["_t"]["info"] = t0 - t_ini - it["_t"]["espera"]
     baixar(it, info, nome, it["destino"])
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
-    SESS["tempo_dl"] += time.monotonic() - t0
+    t1 = time.monotonic()
+    SESS["tempo_dl"] += t1 - t0
+    tf = it.get("_tf") or t1
+    it["_t"]["dl"] = tf - (it.get("_td") or t0)
+    it["_t"]["conv"] = t1 - tf
     it["arq"] = rel_do_arquivo(it["destino"], nome, exts)
     for e in exts:
         pp = os.path.join(it["destino"], nome + e)
@@ -991,6 +1114,14 @@ def processar(it):
             registrar(chave(it["url"]), os.path.realpath(pp), "v" if it["fmt"] == "video" else "a")
             break
     marcar(it, "ok")
+    tt = it["_t"]
+    with DEV_LOCK:
+        DEV["ok"] += 1
+        DEV["medidas"].append({"info": max(0, tt.get("info", 0)), "dl": max(0, tt.get("dl", 0)), "conv": max(0, tt.get("conv", 0)),
+                               "espera": max(0, tt.get("espera", 0)), "total": time.monotonic() - t_ini})
+        del DEV["medidas"][:-60]
+    for k in ("_tf", "_td"):
+        it.pop(k, None)
 
 
 def restantes():
@@ -1020,16 +1151,25 @@ def pegar():
 
 def ocioso():
     with LOCK:
-        if SESS["inicio"] and SESS["fim"] is None:
+        if SESS["inicio"] and SESS["fim"] is None and not any(i["status"] == "baixando" for i in ITENS):
             SESS["fim"] = time.time()
-    aviso("")
+    if not any(i["status"] == "baixando" for i in ITENS) and not PAUSA["on"]:
+        aviso("")
     time.sleep(1)
 
 
-def trabalhador():
+def trabalhador(idx=0):
     feitos = 0
     while True:
         try:
+            if idx == 1 and not rapido_ligado():
+                time.sleep(1)
+                continue
+            if PAUSA["on"]:
+                if restantes():
+                    aviso("⏸️ Downloads pausados. Toque em Continuar para seguir.")
+                time.sleep(1)
+                continue
             it = pegar()
             if not it:
                 feitos = 0
@@ -1042,11 +1182,21 @@ def trabalhador():
                     break
                 except Exception as ex:
                     erro = limpar_erro(ex)
+                    if "AO_VIVO" in erro or "code 183" in erro or "code -183" in erro:
+                        try:
+                            limpar_cancelado(it)
+                        except Exception:
+                            pass
+                        marcar(it, "falha", "Transmissão ao vivo: não dá para baixar")
+                        break
                     if it["cancel"] or "cancelado_pelo_usuario" in erro:
                         limpar_cancelado(it)
                         marcar(it, "cancelada")
                         break
                     if passageiro(erro) and tent < 3:
+                        if bloqueio_youtube(erro):
+                            acionar_freio("YouTube pediu confirmação (bloqueio)")
+                        dev_log("tentativa", "%s (%d/3): %s" % ((it.get("titulo") or it.get("url") or "")[:60], tent, erro[:160]))
                         esp = 60 * tent if bloqueio_youtube(erro) else 20 * tent
                         aviso(f"⏳ Falhou (tentativa {tent}/3). Tentando novamente em {esp} s.")
                         esperar(esp, lambda: it["cancel"])
@@ -1057,6 +1207,10 @@ def trabalhador():
                         limpar_cancelado(it)
                     except Exception:
                         pass
+                    if bloqueado:
+                        acionar_freio("YouTube bloqueou temporariamente")
+                    dev_log("erro", "%s: %s" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:200]))
+                    DEV["falha"] += 1
                     marcar(it, "falha", "YouTube bloqueou temporariamente (confirmação necessária)" if bloqueado else erro[:150])
                     break
             feitos += 1
@@ -1065,8 +1219,11 @@ def trabalhador():
                 feitos = 0
             elif bloqueado:
                 feitos = 0
+                dev_log("pausa", "Pausa de 5 minutos para o YouTube esfriar")
                 aviso("⏸️ Pausando 5 minutos para o YouTube esfriar. A fila continuará em seguida.")
                 esperar(300, lambda: restantes() == 0)
+            elif it.get("_rap") and rapido_ligado():
+                pass    # no modo rápido o intervalo entre downloads é controlado pela rede (rede_pegar)
             elif feitos >= CFG["lote"]:
                 feitos = 0
                 aviso(f"☕ Pausa de {CFG['pausa_lote']} s para estabilidade. Faltam {resta} itens.")
@@ -1458,7 +1615,7 @@ class H(BaseHTTPRequestHandler):
                 nome = re.sub(r"[^\w .-]", "", (q.get("n") or ["WaveFly.zip"])[0])[:60] or "WaveFly.zip"
                 return self._audio("", anexo=True, abs_path=os.path.join(ZIP_DIR, t + ".zip"), nome=nome)
             if p == "/api/titulo":
-                return self._json(titulo_rapido((q.get("id") or [""])[0]))
+                return self._json(titulo_rapido((q.get("id") or [""])[0], bool((q.get("live") or [""])[0])))
             if p == "/api/existe":
                 ids = [v for v in (q.get("ids") or [""])[0].split(",") if re.fullmatch(r"[\w-]{11}", v)][:400]
                 import urllib.parse as _up; _q=_up.parse_qs(_up.urlparse(self.path).query); _sub=_q.get("sub",[""])[0]; return self._json({"ja": [v for v in ids if ja_existe(v, pasta=raiz(), sub=_sub)]})
@@ -2124,20 +2281,26 @@ function plHTML(p){const pid=esc(p.pid);
  return h+'</div>'}
 const TITS=new Map(),TQ=[];let TA=0;
 function fetchTit(id){if(TITS.has(id)||TQ.includes(id))return;TQ.push(id);pumpT()}
-function pumpT(){while(TA<3&&TQ.length){const id=TQ.shift();TA++;api('/api/titulo?id='+encodeURIComponent(id)).then(d=>TITS.set(id,d.titulo?d:{titulo:'',canal:'',erro:true})).catch(()=>TITS.set(id,{titulo:'',canal:'',erro:true})).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}pumpT()})}}
+let RPVT=0;function refazer(){clearTimeout(RPVT);RPVT=setTimeout(()=>{rpv();ccount()},120)}
+function pumpT(){while(TA<3&&TQ.length){const id=TQ.shift();TA++;api('/api/titulo?id='+encodeURIComponent(id)+(LST.length<=5?'&live=1':'')).then(d=>TITS.set(id,(d.titulo||d.live)?d:{titulo:'',canal:'',erro:true})).catch(()=>TITS.set(id,{titulo:'',canal:'',erro:true})).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
 const titTxt=(id,d)=>d.titulo||(d.erro?'Vídeo '+id:'Carregando...');
 function updTit(id){const d=TITS.get(id)||{};$$(`[data-tid="${id}"]`).forEach(e=>e.textContent=titTxt(id,d));$$(`[data-cid="${id}"]`).forEach(e=>e.textContent=d.canal||(d.erro?'Título indisponível':''))}
+const indisp=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).erro&&!TITS.get(x.id).titulo);
+const aoVivo=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).live);
+function tirarLink(url){const ta=$('#ta');ta.value=ta.value.split('\n').filter(l=>!l.includes(url)&&!(url.match(/[\w-]{11}$/)&&l.includes(url.match(/[\w-]{11}$/)[0]))).join('\n');PVN=3;cnt()}
 function rpv(){const b=$('#pv');if(!LST.length){b.hidden=true;b.innerHTML='';return}
- const pls=LST.filter(x=>x.pl),sing=LST.filter(x=>!x.pl);pls.forEach(carregaPL);
+ const pls=LST.filter(x=>x.pl),sing=LST.filter(x=>!x.pl&&!indisp(x));pls.forEach(carregaPL);
  const vis=sing.slice(0,PVN),rest=sing.length-vis.length;b.hidden=false;
  b.innerHTML=pls.map(x=>plHTML(PLP[x.pid])).join('')+vis.map(x=>{const d=x.id?(TITS.get(x.id)||{}):{},j=!!(x.id&&JA.has(x.id));
   const th=x.id?`<img class="ft s" loading="lazy" src="https://i.ytimg.com/vi/${esc(x.id)}/mqdefault.jpg" alt="">`:'<span class="ft s"></span>';
-  const l2=j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
+  const lv=aoVivo(x);
+  const l2=lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
   const tt=x.id?`<div class="tt" data-tid="${esc(x.id)}">${esc(titTxt(x.id,d))}</div>${l2}`:`<div class="tt">Link do YouTube</div><div class="sm mut tt">${esc(short(x.url))}</div>`;
-  return `<div class="pr${j?' off':''}" ${j?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div></div>`}).join('')+
+  return `<div class="pr${j||lv?' off':''}" ${j||lv?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div><button class="pvx" data-rm="${esc(x.url)}" aria-label="Remover" data-i="x">×</button></div>`}).join('')+
   (rest>0?`<button class="t" id="pvmais">Ver mais (${Math.min(7,rest)})</button>`:'')+(PVN>3&&sing.length>3?'<button class="t" id="pvmenos">Recolher</button>':'');
  vis.forEach(x=>{if(x.id)fetchTit(x.id)})}
 $('#pv').onclick=e=>{const t=e.target;
+ const rm=t.closest('[data-rm]');if(rm){return tirarLink(rm.dataset.rm)}
  if(t.id==='pvmais'){PVN=(PVN===3)?10:(PVN+10);return rpv()}
  if(t.id==='pvmenos'){PVN=3;return rpv()}
  const a=t.closest('[data-pa]');if(!a)return;const p=PLP[a.dataset.pid];if(!p)return;const k=a.dataset.pa;
@@ -2145,11 +2308,12 @@ $('#pv').onclick=e=>{const t=e.target;
  rpv();ccount()};
 $('#pv').onchange=e=>{const c=e.target.closest('input[data-pc]');if(!c)return;const p=PLP[c.dataset.pc];if(!p)return;c.checked?p.sel.add(c.dataset.vid):p.sel.delete(c.dataset.vid);const h=$(`[data-ph="${c.dataset.pc}"]`);if(h)h.textContent=plHead(p);ccount()};
 function ccount(){const MX=C.max_links||1000;let pls=0,sing=0,sel=0,est=0,pend=0,jaN=0;
- LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else sing++});
+ LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)){}else sing++});
  const tot=sing+sel;let s=LST.length?`${tot} ${tot===1?'item':'itens'}`+(pls?` · ${pls} playlist${pls>1?'s':''}`:'')+(pend?' · carregando...':''):(LR.dup?` · ${LR.dup} repetidos`:'');
  if(jaN)s+=` · ${jaN} duplicados marcados`;
  if(est)s+=` · ~${tamf(est)}`;
- $('#cnt').textContent=s;$('#bgo').textContent=tot>1?`Baixar ${Math.min(tot,MX)}`:'Baixar'}
+ $('#cnt').textContent=s;$('#bgo').textContent=tot>1?`Baixar ${Math.min(tot,MX)}`:'Baixar';$('#bgo').hidden=!(tot>0)}
+let LASTDUP=0;
 function cnt(){
  const raw=$('#ta').value;
  const r=parse(raw);
@@ -2157,9 +2321,10 @@ function cnt(){
  LR={dup:r.dup,fora:r.fora};
  
  // Aviso dinâmico instantâneo se houver links repetidos detectados na caixa de texto
- if(r.dup > 0){
-  toast(`${r.dup} repetido${r.dup>1?'s':''} ignorado${r.dup>1?'s':''}`);
+ if(r.dup > LASTDUP){
+  const novos=r.dup-LASTDUP;toast(`${novos} repetido${novos>1?'s':''} ignorado${novos>1?'s':''}`);
  }
+ LASTDUP=r.dup;
  
  jaIds(LST.filter(x=>!x.pl).map(x=>x.id));ccount();clearTimeout(PVT);PVT=setTimeout(rpv,250)}
 $('#ta').oninput=()=>{PVN=3;cnt()};
@@ -2175,7 +2340,7 @@ $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
   try{localStorage.setItem('wf_tit', JSON.stringify(window.__TIT))}catch(_){}
 }catch(_){}if(!r.n)return toast('Cole pelo menos um link do YouTube');
  if(r.lst.some(x=>x.pl&&PLP[x.pid]&&PLP[x.pid].loading))return toast('Aguarde o carregamento da playlist.');
- const keep=[],listas=[];r.lst.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&!p.erro&&p.itens.length){if(p.sel.size)listas.push({pid:p.pid,titulo:p.titulo,ids:p.itens.filter(i=>p.sel.has(i.id)).map(i=>i.id)})}else if(!(x.id&&JA.has(x.id)))keep.push(x.url)});
+ const keep=[],listas=[];r.lst.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&!p.erro&&p.itens.length){if(p.sel.size)listas.push({pid:p.pid,titulo:p.titulo,ids:p.itens.filter(i=>p.sel.has(i.id)).map(i=>i.id)})}else if(!(x.id&&JA.has(x.id))&&!indisp(x)&&!aoVivo(x))keep.push(x.url)});
  
  const b=$('#bgo');b.disabled=true;b.textContent='Processando links...';
  try{const d=await api('/api/add',{texto:keep.join('\n'),listas,titulos:window.__TIT||{}});$('#ta').value='';PVN=3;let m=d.add?`${d.add} adicionado${d.add>1?'s':''}`:`Nada novo`;
@@ -2241,6 +2406,7 @@ let ACTIVE_PL = null;
 let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro')==='1'}catch(e){}
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
 
+let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBIO=null;
 function dlib(){
  $('#wrapvid').hidden=!(ACTIVE_PL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
  const f=$('#lf').value.trim().toLowerCase();
@@ -2253,33 +2419,40 @@ function dlib(){
  let hPls = '';
  if(ACTIVE_PL){
   hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div>` +
-   (PL_FILTRO_VID ? [...ACTIVE_PL.itens].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ACTIVE_PL.itens.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>{
+   (LIBQ=(PL_FILTRO_VID ? [...ACTIVE_PL.itens].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ACTIVE_PL.itens.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
+    (PL_FILTRO_VID ? [...ACTIVE_PL.itens].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ACTIVE_PL.itens.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
  } else {
   hPls = pls.map(p=>`<div class="pl-card">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
   if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
-  hPls += mus.map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`).join('');
+  LIBQ=mus.map(x=>x.rel);
+  hPls += mus.slice(0,LIBN).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`).join('');
  }
+ const totalLib = ACTIVE_PL ? LIBQ.length : mus.length;
+ if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
  $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p></div>`;
 
  let vids = LIB.videos || [];
  if(fv) vids = vids.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(fv));
- $('#libv').innerHTML = vids.length ? vids.map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p></div>`;
+ LIBQV=vids.map(x=>x.rel);
+ $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p></div>`;
+ if(vids.length>LIBNV) $('#libv').insertAdjacentHTML('beforeend',`<div id="libvmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBNV} de ${vids.length} · role para ver mais</div>`);
+ try{if(LIBIO)LIBIO.disconnect();LIBIO=new IntersectionObserver(es=>{es.forEach(en=>{if(!en.isIntersecting)return;if(en.target.id==='libmais'){LIBN+=60}else{LIBNV+=60}dlib()})},{rootMargin:'600px'});['libmais','libvmais'].forEach(i=>{const el=document.getElementById(i);if(el)LIBIO.observe(el)})}catch(e){}
 
  const totalItens = (LIB.musicas?.length||0) + (LIB.videos?.length||0) + (LIB.playlists?.reduce((a,b)=>a+b.total,0)||0);
  $('#libinfo').textContent = `${totalItens} arquivos`;
  updbars();marcarNow();
 }
 
-$('#lf').oninput=dlib;$('#lfv').oninput=dlib;
+$('#lf').oninput=()=>{LIBN=60;dlib()};$('#lfv').oninput=()=>{LIBNV=60;dlib()};
 
 document.addEventListener('click',e=>{
  if(e.target.id==='chkvid'){PL_FILTRO_VID=e.target.checked;svPL();return dlib()}
   const opp=e.target.closest('[data-oppl]');
- if(opp){const nome=opp.dataset.oppl;ACTIVE_PL=LIB.playlists.find(p=>p.nome===nome)||null;PL_FILTRO_VID=false;svPL();return dlib()}
- if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;svPL();return dlib()}
+ if(opp){const nome=opp.dataset.oppl;ACTIVE_PL=LIB.playlists.find(p=>p.nome===nome)||null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
+ if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
  const pr=e.target.closest('[data-playrel]');
  if(pr){tocar(pr.dataset.playrel,pr.closest('#lib,#libv'));return}
  const cb=e.target.closest('input[data-rel]');
@@ -2308,7 +2481,7 @@ function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.durat
 function tocar(rel,box){
  const all=[...(LIB.musicas||[]),...(LIB.videos||[]),...(LIB.playlists||[]).flatMap(p=>p.itens)];
  const x=all.find(i=>i.rel===rel);if(!x)return;
- if(box)QUEUE=[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);
+ if(box)QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);
  const vid=/\.(mp4|mkv)$/i.test(rel),url='/api/audio?f='+encodeURIComponent(rel),capa='/api/capa?f='+encodeURIComponent(rel);
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');
@@ -2731,6 +2904,7 @@ def main():
     carregar_index()
     restaurar_fila()
     threading.Thread(target=trabalhador, daemon=True).start()
+    threading.Thread(target=trabalhador, args=(1,), daemon=True).start()
     if SERVIDOR:
         threading.Thread(target=faxina, daemon=True).start()
     try:
