@@ -237,17 +237,6 @@ public class MainActivity extends AppCompatActivity {
         }, "wavefly-share").start();
     }
 
-    /** O botão flutuante foi ligado/desligado fora da página (segurar e confirmar): atualiza o interruptor. */
-    static void avisarBolha(final boolean on) {
-        final MainActivity a = atual;
-        PythonService.sincronizarBolha(a != null ? a : null);
-        if (a == null) return;
-        a.runOnUiThread(() -> {
-            if (a.web != null && !a.destruida && a.paginaCarregada)
-                a.web.evaluateJavascript("window.wfBolha&&wfBolha(" + on + ")", null);
-        });
-    }
-
     @Override
     public void onBackPressed() {
         if (web != null && paginaCarregada && web.canGoBack()) web.goBack();
@@ -324,36 +313,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
-        public String bolhaEstado() {
-            return Bolha.ligada(MainActivity.this) && Bolha.permitido(MainActivity.this) ? "1" : "0";
-        }
-
-        /** Liga ou desliga o botão flutuante. Devolve "ok" ou "perm" (precisa liberar "aparecer sobre outros apps"). */
-        @JavascriptInterface
-        public String bolha(final int on) {
-            final android.content.SharedPreferences pf = Idioma.prefs(MainActivity.this);
-            if (on == 0) {
-                pf.edit().putBoolean("bolha", false).putBoolean("bolha_quer", false).apply();
-                runOnUiThread(() -> PythonService.sincronizarBolha(MainActivity.this));
-                return "ok";
-            }
-            if (!Bolha.permitido(MainActivity.this)) {
-                pf.edit().putBoolean("bolha_quer", true).apply();
-                runOnUiThread(() -> {
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + getPackageName())));
-                    } catch (Throwable ignored) {
-                    }
-                });
-                return "perm";
-            }
-            pf.edit().putBoolean("bolha", true).putBoolean("bolha_quer", false).apply();
-            runOnUiThread(() -> PythonService.sincronizarBolha(MainActivity.this));
-            return "ok";
-        }
-
-        @JavascriptInterface
         public void verificarAtualizacao() {
             runOnUiThread(() -> Atualizador.verificar(MainActivity.this, true));
         }
@@ -422,14 +381,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (web != null) web.resumeTimers();
-        android.content.SharedPreferences pf = Idioma.prefs(this);
-        if (pf.getBoolean("bolha_quer", false) && Bolha.permitido(this)) {
-            pf.edit().putBoolean("bolha", true).putBoolean("bolha_quer", false).apply();
-            PythonService.sincronizarBolha(this);
-            if (paginaCarregada) web.evaluateJavascript("window.wfBolha&&wfBolha(true)", null);
-        } else if (paginaCarregada) {
-            web.evaluateJavascript("window.wfBolha&&wfBolha(" + Bolha.ligada(this) + ")", null);
-        }
     }
 
     @Override

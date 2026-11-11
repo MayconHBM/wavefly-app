@@ -41,7 +41,10 @@ public class PythonService extends Service {
     static final String ACTION_PLAY_PAUSE = "com.wavefly.app.PLAY_PAUSE";
     static final String ACTION_NEXT = "com.wavefly.app.NEXT";
     static final String ACTION_PREV = "com.wavefly.app.PREV";
-    static final String ACTION_BOLHA = "com.wavefly.app.BOLHA";
+    static final String ACTION_BACK10 = "com.wavefly.app.BACK10";
+    static final String ACTION_FWD10 = "com.wavefly.app.FWD10";
+    static final String ACTION_PAUSA_DL = "com.wavefly.app.PAUSA_DL";
+    static final String ACTION_DISPENSADA = "com.wavefly.app.DISPENSADA";
     private static final String CHANNEL = "wavefly";
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
@@ -77,13 +80,11 @@ public class PythonService extends Service {
     private boolean emPrimeiroPlano = false;
     private long semUsoDesde = 0;
     private String ultimaChave = "";
-    private Bolha bolha;
-    private static PythonService instancia;
+    static volatile boolean dlPausado = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        instancia = this;
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && nm != null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "WaveFly", NotificationManager.IMPORTANCE_LOW);
@@ -103,8 +104,6 @@ public class PythonService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String act = intent == null ? null : intent.getAction();
-        sincronizarBolhaAqui();
-        if (ACTION_BOLHA.equals(act)) return START_STICKY;
         if (ACTION_STOP.equals(act)) {
             encerrar();
             return START_NOT_STICKY;
@@ -116,6 +115,37 @@ public class PythonService extends Service {
                 } catch (Throwable ignored) {
                 }
             }).start();
+            return START_STICKY;
+        }
+        if (ACTION_PAUSA_DL.equals(act)) {
+            final boolean novo = !dlPausado;
+            dlPausado = novo;
+            new Thread(() -> {
+                try {
+                    Python.getInstance().getModule("app_entry").callAttr("pausar", novo);
+                } catch (Throwable ignored) {
+                }
+            }).start();
+            return START_STICKY;
+        }
+        if (ACTION_BACK10.equals(act) || ACTION_FWD10.equals(act)) {
+            long cur = pPosMs;
+            if (pTocando && pEm != 0) cur += SystemClock.elapsedRealtime() - pEm;
+            long novo = cur + (ACTION_FWD10.equals(act) ? 10000 : -10000);
+            if (novo < 0) novo = 0;
+            if (pDurMs > 0 && novo > pDurMs) novo = pDurMs;
+            pPosMs = novo;
+            pEm = SystemClock.elapsedRealtime();
+            MainActivity.comandoPlayer("seek:" + novo);
+            ultimaChave = "";
+            return START_STICKY;
+        }
+        if (ACTION_DISPENSADA.equals(act)) {
+            // O usuário arrastou a notificação (só dá com a música pausada): para o player de vez.
+            MainActivity.comandoPlayer("stop");
+            pAtivo = false;
+            pTocando = false;
+            ultimaChave = "";
             return START_STICKY;
         }
         if (ACTION_PLAY_PAUSE.equals(act)) {
@@ -142,46 +172,11 @@ public class PythonService extends Service {
     /** O usuário deslizou o app nos recentes: encerra tudo. */
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // Com o botão flutuante ligado o app continua rodando; sem ele, fechar nos recentes encerra tudo.
-        if (Bolha.ligada(this) && Bolha.permitido(this)) return;
         encerrar();
-    }
-
-    /** Chamado pela tela quando o botão flutuante é ligado ou desligado. */
-    static void sincronizarBolha(android.content.Context c) {
-        PythonService s = instancia;
-        if (s != null) {
-            s.sincronizarBolhaAqui();
-        } else if (c != null) {
-            try {
-                c.startService(new Intent(c, PythonService.class).setAction(ACTION_BOLHA));
-            } catch (Throwable ignored) {
-            }
-        }
-    }
-
-    private void sincronizarBolhaAqui() {
-        boolean quer = Bolha.ligada(this) && Bolha.permitido(this);
-        if (quer) {
-            if (bolha == null) bolha = new Bolha(this);
-            bolha.mostrar();
-            if (!emPrimeiroPlano) {
-                try {
-                    startForeground(NOTIF_ID, montar(false, false, 0, 0, true));
-                    emPrimeiroPlano = true;
-                } catch (Throwable t) {
-                    Log.w(TAG, "primeiro plano (bolha)", t);
-                }
-            }
-        } else if (bolha != null) {
-            bolha.esconder();
-            bolha = null;
-        }
     }
 
     private void encerrar() {
         rodando = false;
-        if (bolha != null) bolha.esconder();
         try {
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (nm != null) nm.cancel(NOTIF_ID);
@@ -236,17 +231,20 @@ public class PythonService extends Service {
             }
             if (!ready) continue;
             int baixando = 0, fila = 0, total = 0;
+            boolean pausado = false;
             try {
                 String[] p = Python.getInstance().getModule("app_entry").callAttr("resumo").toString().split("\\|", -1);
                 baixando = Integer.parseInt(p[0]);
                 fila = Integer.parseInt(p[1]);
                 total = Integer.parseInt(p[2]);
+                pausado = p.length > 6 && p[6].equals("1");
+                dlPausado = pausado;
             } catch (Throwable ignored) {
             }
             boolean baixandoAlgo = baixando + fila > 0;
             boolean musica = pAtivo;                     // música e vídeo (no vídeo, só o áudio)
             boolean tocandoAlgo = pAtivo && pTocando;    // música ou vídeo: mantém o app acordado
-            boolean ativo = baixandoAlgo || tocandoAlgo;
+            boolean ativo = baixando > 0 || (fila > 0 && !pausado) || tocandoAlgo;
 
             if (ativo) {
                 if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(60 * 60 * 1000L);
@@ -260,7 +258,7 @@ public class PythonService extends Service {
                 Log.w(TAG, "notificação", t);
             }
 
-            if (visivel || ativo || (Bolha.ligada(this) && Bolha.permitido(this))) {
+            if (visivel || ativo) {
                 ociosoDesde = 0;
             } else {
                 if (ociosoDesde == 0) ociosoDesde = System.currentTimeMillis();
@@ -277,8 +275,7 @@ public class PythonService extends Service {
         if (nm == null) return;
 
         // Nada para mostrar: tira a notificação.
-        boolean comBolha = Bolha.ligada(this) && Bolha.permitido(this);
-        if (!baixando && !musica && !comBolha) {
+        if (!baixando && !musica) {
             semUsoDesde = 0;
             if (emPrimeiroPlano) pararPrimeiroPlano(true);
             else if (!ultimaChave.isEmpty()) nm.cancel(NOTIF_ID);
@@ -290,7 +287,7 @@ public class PythonService extends Service {
         // Em primeiro plano enquanto baixa ou toca música; ao parar, espera um pouco antes de soltar
         // (evita sobe-e-desce na troca de faixa/download).
         long agora = System.currentTimeMillis();
-        boolean precisa = baixando || musicaTocando || comBolha;
+        boolean precisa = (baixando && !dlPausado) || musicaTocando;
         boolean fixa;
         if (precisa) {
             semUsoDesde = 0;
@@ -303,7 +300,7 @@ public class PythonService extends Service {
         }
 
         if (musica) buscarCapa(pCapa);
-        String chave = (comBolha ? "B|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
+        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
@@ -352,32 +349,35 @@ public class PythonService extends Service {
             if (cb != null && capaDe.equals(pCapa)) b.setLargeIcon(cb);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly" : pTitulo);
             if (baixando) {
-                b.setContentText("Baixando " + contagem);
+                b.setContentText(Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem);
                 b.setProgress(total, Math.min(feitos, total), false);
             } else {
                 b.setContentText(pSub);
             }
-            b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, "Anterior", 5));
+            b.setDeleteIntent(PendingIntent.getService(this, 9,
+                    new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, Idioma.t(this, "Anterior", "Previous", "Anterior"), 5));
+            b.addAction(acao(ACTION_BACK10, R.drawable.ic_n_back10, "−10 s", 6));
             b.addAction(acao(ACTION_PLAY_PAUSE,
                     pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play,
-                    pTocando ? "Pausar" : "Tocar", 3));
-            b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, "Próxima", 4));
-            if (baixando) b.addAction(acao(ACTION_CANCEL, 0, "Cancelar download", 2));
+                    pTocando ? Idioma.t(this, "Pausar", "Pause", "Pausar") : Idioma.t(this, "Tocar", "Play", "Reproducir"), 3));
+            b.addAction(acao(ACTION_FWD10, R.drawable.ic_n_fwd10, "+10 s", 7));
+            b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, Idioma.t(this, "Próxima", "Next", "Siguiente"), 4));
             Notification.MediaStyle estilo = new Notification.MediaStyle();
             synchronized (this) {
                 if (sessao != null) estilo.setMediaSession(sessao.getSessionToken());
             }
-            estilo.setShowActionsInCompactView(0, 1, 2);
+            estilo.setShowActionsInCompactView(1, 2, 3);
             b.setStyle(estilo);
-        } else if (baixando) {
-            b.setContentTitle(Idioma.t(this, "Baixando", "Downloading", "Descargando"));
-            b.setContentText(contagem);
-            b.setProgress(total, Math.min(feitos, total), false);
-            b.addAction(acao(ACTION_CANCEL, 0, Idioma.t(this, "Cancelar", "Cancel", "Cancelar"), 2));
         } else {
-            b.setContentTitle(Idioma.t(this, "Botão flutuante ativo", "Floating button on", "Botón flotante activo"));
-            b.setContentText(Idioma.t(this, "Toque no botão sobre o vídeo para baixar.",
-                    "Tap the button over a video to download.", "Toca el botón sobre un vídeo para descargar."));
+            b.setContentTitle(dlPausado ? Idioma.t(this, "Downloads pausados", "Downloads paused", "Descargas en pausa")
+                    : Idioma.t(this, "Baixando", "Downloading", "Descargando"));
+            b.setContentText(contagem);
+            if (!dlPausado) b.setProgress(total, Math.min(feitos, total), false);
+            b.addAction(acao(ACTION_PAUSA_DL, 0, dlPausado ? Idioma.t(this, "Continuar", "Resume", "Continuar")
+                    : Idioma.t(this, "Pausar", "Pause", "Pausar"), 8));
+            b.addAction(acao(ACTION_CANCEL, 0, Idioma.t(this, "Cancelar", "Cancel", "Cancelar"), 2));
         }
         return b.build();
     }
@@ -404,26 +404,6 @@ public class PythonService extends Service {
                     @Override
                     public void onPause() {
                         MainActivity.comandoPlayer("pause");
-                    }
-
-                    @Override
-                    public void onSeekTo(long pos) {
-                        Log.i(TAG, "onSeekTo " + pos);
-                        final long seg = pos / 1000;
-                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
-                                android.widget.Toast.makeText(getApplicationContext(),
-                                        "[teste] O Android avisou: pular para " + (seg / 60) + ":" + String.format("%02d", seg % 60),
-                                        android.widget.Toast.LENGTH_SHORT).show());
-                        pPosMs = pos;
-                        pEm = SystemClock.elapsedRealtime();
-                        atualizarSessao();
-                        MainActivity.comandoPlayer("seek:" + pos);
-                        // reafirma a posição um instante depois, para a barra não voltar enquanto a página confirma
-                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                            pPosMs = pos;
-                            pEm = SystemClock.elapsedRealtime();
-                            atualizarSessao();
-                        }, 1200);
                     }
 
                     @Override
@@ -454,7 +434,7 @@ public class PythonService extends Service {
             PlaybackState ps = new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                             | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
-                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
                     .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
                             posAtual, pTocando ? 1f : 0f, em)
                     .build();
