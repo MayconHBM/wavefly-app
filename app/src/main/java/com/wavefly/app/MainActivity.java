@@ -16,7 +16,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.DownloadListener;
@@ -29,9 +28,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -40,9 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String HOME = "http://127.0.0.1:" + PythonService.PORT + "/";
 
     private WebView web;
-    private LinearLayout loading;
-    private TextView loadingText;
-    private ProgressBar spinner;
+    private SplashView loading;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean paginaCarregada = false;
     private boolean destruida = false;
@@ -57,7 +51,6 @@ public class MainActivity extends AppCompatActivity {
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         int fundo = escuro ? 0xFF1F1510 : 0xFFF3E6CC;
-        int texto = escuro ? 0xFFF3E6CC : 0xFF3B2314;
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(fundo);
@@ -68,25 +61,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        loading = new LinearLayout(this);
-        loading.setOrientation(LinearLayout.VERTICAL);
-        loading.setGravity(Gravity.CENTER);
-        loading.setBackgroundColor(fundo);
-        TextView nome = new TextView(this);
-        nome.setText("WaveFly");
-        nome.setTextSize(34);
-        nome.setTextColor(0xFFD9692A);
-        nome.setGravity(Gravity.CENTER);
-        spinner = new ProgressBar(this);
-        loadingText = new TextView(this);
-        loadingText.setTextColor(texto);
-        loadingText.setTextSize(15);
-        loadingText.setGravity(Gravity.CENTER);
-        loadingText.setPadding(48, 32, 48, 0);
-        loadingText.setTextIsSelectable(true);
-        loading.addView(nome);
-        loading.addView(spinner, new LinearLayout.LayoutParams(120, 120));
-        loading.addView(loadingText);
+        loading = new SplashView(this, escuro);
         root.addView(loading, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
@@ -124,9 +99,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView v, String url) {
                 paginaCarregada = true;
-                loading.setVisibility(View.GONE);
-                web.setVisibility(View.VISIBLE);
+                revelarPagina();
                 avisarFfmpeg();
+                Atualizador.verificar(MainActivity.this, false);
+                tratarIntent(getIntent());
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -142,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
             public boolean onJsConfirm(WebView v, String url, String msg, final JsResult r) {
                 new AlertDialog.Builder(MainActivity.this).setMessage(msg)
                         .setPositiveButton("OK", (d, w) -> r.confirm())
-                        .setNegativeButton("Cancelar", (d, w) -> r.cancel())
+                        .setNegativeButton(Idioma.t(MainActivity.this, "Cancelar", "Cancel", "Cancelar"), (d, w) -> r.cancel())
                         .setOnCancelListener(d -> r.cancel()).show();
                 return true;
             }
@@ -153,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
                 et.setText(def);
                 new AlertDialog.Builder(MainActivity.this).setMessage(msg).setView(et)
                         .setPositiveButton("OK", (d, w) -> r.confirm(et.getText().toString()))
-                        .setNegativeButton("Cancelar", (d, w) -> r.cancel())
+                        .setNegativeButton(Idioma.t(MainActivity.this, "Cancelar", "Cancel", "Cancelar"), (d, w) -> r.cancel())
                         .setOnCancelListener(d -> r.cancel()).show();
                 return true;
             }
@@ -194,17 +170,81 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 if (destruida) return;
                 if (PythonService.error != null) {
-                    spinner.setVisibility(View.GONE);
-                    loadingText.setText("Não foi possível iniciar o WaveFly.\n\n" + PythonService.error);
+                    loading.texto = Idioma.t(MainActivity.this, "Não foi possível iniciar o WaveFly.",
+                            "WaveFly could not start.", "No se pudo iniciar WaveFly.");
+                    loading.invalidate();
+                    new AlertDialog.Builder(MainActivity.this).setMessage(PythonService.error)
+                            .setPositiveButton("OK", null).show();
                     return;
                 }
                 if (PythonService.ready) {
                     if (!paginaCarregada) web.loadUrl(HOME);
                     return;
                 }
-                loadingText.setText(PythonService.status);
+                loading.texto = traduzirStatus(PythonService.status);
                 ui.postDelayed(this, 300);
             }
+        });
+    }
+
+    private String traduzirStatus(String s) {
+        if (s.startsWith("Iniciando o Python")) return Idioma.t(this, s, "Starting Python…", "Iniciando Python…");
+        if (s.startsWith("Preparando o conversor")) return Idioma.t(this, s, "Preparing the audio converter…", "Preparando el conversor de audio…");
+        if (s.startsWith("Iniciando o WaveFly")) return Idioma.t(this, s, "Starting WaveFly…", "Iniciando WaveFly…");
+        return Idioma.t(this, s, "Starting…", "Iniciando…");
+    }
+
+    /** Mostra a página com uma transição suave, depois de a animação de abertura ter rodado um pouco. */
+    private void revelarPagina() {
+        long falta = Math.max(0, 1300 - loading.ativoHa());
+        ui.postDelayed(() -> {
+            if (destruida) return;
+            web.setAlpha(0f);
+            web.setVisibility(View.VISIBLE);
+            web.animate().alpha(1f).setDuration(450).start();
+            loading.animate().alpha(0f).setDuration(450).withEndAction(() -> loading.setVisibility(View.GONE)).start();
+        }, falta);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (paginaCarregada) tratarIntent(intent);
+    }
+
+    /** Link compartilhado de outro app (Compartilhar › WaveFly): põe na fila de download. */
+    private void tratarIntent(Intent it) {
+        if (it == null || !Intent.ACTION_SEND.equals(it.getAction())) return;
+        final String txt = it.getStringExtra(Intent.EXTRA_TEXT);
+        it.setAction(null);
+        if (txt == null || txt.isEmpty()) return;
+        new Thread(() -> {
+            String r;
+            try {
+                r = com.chaquo.python.Python.getInstance().getModule("app_entry").callAttr("baixar_link", txt, "").toString();
+            } catch (Throwable t) {
+                r = "erro";
+            }
+            final String f = r;
+            runOnUiThread(() -> {
+                String m = f.startsWith("ok") ? Idioma.t(this, "Adicionado à fila de download", "Added to the download queue", "Añadido a la cola de descargas")
+                        : f.startsWith("ja") ? Idioma.t(this, "Já está na fila ou na pasta", "Already queued or saved", "Ya está en la cola o en la carpeta")
+                        : Idioma.t(this, "Esse link não é do YouTube", "That is not a YouTube link", "Ese enlace no es de YouTube");
+                android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_LONG).show();
+                if (web != null) web.evaluateJavascript("window.tick&&tick()", null);
+            });
+        }, "wavefly-share").start();
+    }
+
+    /** O botão flutuante foi ligado/desligado fora da página (segurar e confirmar): atualiza o interruptor. */
+    static void avisarBolha(final boolean on) {
+        final MainActivity a = atual;
+        PythonService.sincronizarBolha(a != null ? a : null);
+        if (a == null) return;
+        a.runOnUiThread(() -> {
+            if (a.web != null && !a.destruida && a.paginaCarregada)
+                a.web.evaluateJavascript("window.wfBolha&&wfBolha(" + on + ")", null);
         });
     }
 
@@ -264,6 +304,70 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public String lang() {
+            return Idioma.lang(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void setLang(String l) {
+            Idioma.prefs(MainActivity.this).edit().putString("lang", l == null ? "" : l).apply();
+        }
+
+        @JavascriptInterface
+        public String pref(String k) {
+            return Idioma.prefs(MainActivity.this).getString("p_" + k, "");
+        }
+
+        @JavascriptInterface
+        public void setPref(String k, String v) {
+            Idioma.prefs(MainActivity.this).edit().putString("p_" + k, v).apply();
+        }
+
+        @JavascriptInterface
+        public String bolhaEstado() {
+            return Bolha.ligada(MainActivity.this) && Bolha.permitido(MainActivity.this) ? "1" : "0";
+        }
+
+        /** Liga ou desliga o botão flutuante. Devolve "ok" ou "perm" (precisa liberar "aparecer sobre outros apps"). */
+        @JavascriptInterface
+        public String bolha(final int on) {
+            final android.content.SharedPreferences pf = Idioma.prefs(MainActivity.this);
+            if (on == 0) {
+                pf.edit().putBoolean("bolha", false).putBoolean("bolha_quer", false).apply();
+                runOnUiThread(() -> PythonService.sincronizarBolha(MainActivity.this));
+                return "ok";
+            }
+            if (!Bolha.permitido(MainActivity.this)) {
+                pf.edit().putBoolean("bolha_quer", true).apply();
+                runOnUiThread(() -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName())));
+                    } catch (Throwable ignored) {
+                    }
+                });
+                return "perm";
+            }
+            pf.edit().putBoolean("bolha", true).putBoolean("bolha_quer", false).apply();
+            runOnUiThread(() -> PythonService.sincronizarBolha(MainActivity.this));
+            return "ok";
+        }
+
+        @JavascriptInterface
+        public void verificarAtualizacao() {
+            runOnUiThread(() -> Atualizador.verificar(MainActivity.this, true));
+        }
+
+        @JavascriptInterface
+        public String versaoApp() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Throwable t) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
         public String paste() {
             final String[] out = {""};
             final java.util.concurrent.CountDownLatch l = new java.util.concurrent.CountDownLatch(1);
@@ -318,6 +422,14 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (web != null) web.resumeTimers();
+        android.content.SharedPreferences pf = Idioma.prefs(this);
+        if (pf.getBoolean("bolha_quer", false) && Bolha.permitido(this)) {
+            pf.edit().putBoolean("bolha", true).putBoolean("bolha_quer", false).apply();
+            PythonService.sincronizarBolha(this);
+            if (paginaCarregada) web.evaluateJavascript("window.wfBolha&&wfBolha(true)", null);
+        } else if (paginaCarregada) {
+            web.evaluateJavascript("window.wfBolha&&wfBolha(" + Bolha.ligada(this) + ")", null);
+        }
     }
 
     @Override

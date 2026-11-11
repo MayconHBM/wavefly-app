@@ -208,7 +208,12 @@ def ajustar_html(html):
             _log("trecho não encontrado (ou repetido) no HTML: %r" % antigo[:60])
             continue
         html = html.replace(antigo, novo, 1)
-    extra = CSS + JS
+    try:
+        import wavefly_ui
+        extra = CSS + JS + wavefly_ui.bloco()
+    except Exception as e:
+        _log('falha ao montar a interface extra: %s' % e)
+        extra = CSS + JS
     pos = html.rfind("</body>")
     if pos < 0:
         return html + extra
@@ -238,8 +243,46 @@ def corrigir_capas(w):
     w._vid_do_arquivo = _vid_do_arquivo
 
 
+def rotas(w):
+    """Rotas extras do app: sugestões, versões e atualização do yt-dlp."""
+    orig = w.H.do_GET
+
+    def do_GET(self):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            u = urlparse(self.path)
+            if u.path in ("/api/combina", "/api/ytdlp") and self._host_ok():
+                q = parse_qs(u.query)
+                if u.path == "/api/combina":
+                    import wavefly_recs
+                    try:
+                        pg = max(0, int((q.get("pg") or ["0"])[0]))
+                    except ValueError:
+                        pg = 0
+                    return self._json(wavefly_recs.sugestoes(w, pg, 5))
+                import app_entry
+                res = ""
+                if (q.get("forcar") or [""])[0]:
+                    res = app_entry.atualizar_ytdlp(w.BASE, True)
+                return self._json({"versao": app_entry.versao_ytdlp(), "resultado": res})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as ex:
+            try:
+                return self._json({"erro": str(ex)[:200], "itens": [], "mais": False}, 200)
+            except Exception:
+                return
+        return orig(self)
+
+    w.H.do_GET = do_GET
+
+
 def aplicar(w):
     """Aplica tudo sobre o módulo waveflysite já importado. Nunca levanta exceção."""
+    try:
+        rotas(w)
+    except Exception as e:
+        _log("falha ao criar as rotas extras: %s" % e)
     try:
         w.HTML = ajustar_html(w.HTML)
     except Exception as e:

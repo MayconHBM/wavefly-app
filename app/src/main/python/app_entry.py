@@ -37,6 +37,7 @@ def start(data_dir, ffmpeg_bin, ffmpeg_lib, port):
         except Exception:
             pass
 
+        usar_ytdlp_novo(data_dir)
         sys.argv = ["wavefly", "--no-browser", "--port", str(port)]
         import waveflysite
         try:
@@ -47,6 +48,7 @@ def start(data_dir, ffmpeg_bin, ffmpeg_lib, port):
 
         _thread = threading.Thread(target=waveflysite.main, name="wavefly-server", daemon=True)
         _thread.start()
+        threading.Thread(target=atualizar_ytdlp, args=(data_dir, False), name="wavefly-ytdlp", daemon=True).start()
 
         url = "http://127.0.0.1:%d/" % port
         for _ in range(120):
@@ -165,3 +167,118 @@ def stream_url(vid):
         return url or "ERRO:Não achei o áudio deste vídeo para a prévia."
     except BaseException as e:
         return "ERRO:" + str(e)[:200]
+
+
+# --------------------------------------------------------------------------- yt-dlp sempre em dia
+def _ver(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:4])
+
+
+def _pasta_ytdlp(data_dir):
+    return os.path.join(data_dir, "ytdlp")
+
+
+def _versao_embutida():
+    try:
+        from importlib.metadata import version
+        return version("yt-dlp")
+    except Exception:
+        return ""
+
+
+def usar_ytdlp_novo(data_dir):
+    """Se já baixamos um yt-dlp mais novo que o do app, usa ele (precisa rodar antes de importar o motor)."""
+    try:
+        pasta = _pasta_ytdlp(data_dir)
+        whls = sorted(f for f in os.listdir(pasta) if f.endswith(".whl")) if os.path.isdir(pasta) else []
+        if not whls:
+            return
+        whl = os.path.join(pasta, whls[-1])
+        v = re.search(r"yt_dlp-([\d.]+)-", whls[-1])
+        emb = _versao_embutida()
+        if v and emb and _ver(v.group(1)) <= _ver(emb):
+            return
+        sys.path.insert(0, whl)
+        try:
+            import yt_dlp.version  # noqa: F401
+        except Exception:
+            sys.path.remove(whl)
+            for k in [k for k in sys.modules if k == "yt_dlp" or k.startswith("yt_dlp.")]:
+                del sys.modules[k]
+    except Exception:
+        traceback.print_exc()
+
+
+def versao_ytdlp():
+    try:
+        import yt_dlp.version as v
+        return v.__version__
+    except Exception:
+        return ""
+
+
+def atualizar_ytdlp(data_dir, forcar):
+    """Confere o PyPI; se houver yt-dlp novo, baixa para ser usado na próxima abertura. Devolve um texto curto."""
+    import hashlib
+    import json
+    try:
+        marca = os.path.join(_pasta_ytdlp(data_dir), "ultima.txt")
+        if not forcar:
+            try:
+                if time.time() - float(open(marca).read()) < 20 * 3600:
+                    return "recente"
+            except Exception:
+                pass
+        req = urllib.request.Request("https://pypi.org/pypi/yt-dlp/json", headers={"User-Agent": "WaveFly"})
+        info = json.loads(urllib.request.urlopen(req, timeout=15).read().decode())
+        nova = info["info"]["version"]
+        atual = max(versao_ytdlp(), _versao_embutida(), key=_ver)
+        os.makedirs(_pasta_ytdlp(data_dir), exist_ok=True)
+        open(marca, "w").write(str(time.time()))
+        if _ver(nova) <= _ver(atual):
+            return "em_dia:" + atual
+        arq = next(u for u in info["urls"] if u["packagetype"] == "bdist_wheel")
+        destino = os.path.join(_pasta_ytdlp(data_dir), arq["filename"])
+        tmp = destino + ".baixando"
+        dados = urllib.request.urlopen(urllib.request.Request(arq["url"], headers={"User-Agent": "WaveFly"}), timeout=60).read()
+        if hashlib.sha256(dados).hexdigest() != arq["digests"]["sha256"]:
+            return "erro:checksum"
+        with open(tmp, "wb") as f:
+            f.write(dados)
+        os.replace(tmp, destino)
+        for f in os.listdir(_pasta_ytdlp(data_dir)):
+            if f.endswith(".whl") and f != arq["filename"]:
+                try:
+                    os.remove(os.path.join(_pasta_ytdlp(data_dir), f))
+                except OSError:
+                    pass
+        return "baixada:" + nova
+    except BaseException as e:
+        return "erro:" + str(e)[:100]
+
+
+# --------------------------------------------------------------------------- botão flutuante / compartilhar
+def baixar_link(texto, fmt):
+    """Põe um link na fila. fmt: 'mp3', 'original', 'video' (vazio = o formato das configurações).
+    Devolve 'ok', 'ja', 'nenhum' ou 'erro'."""
+    try:
+        import waveflysite as w
+        links, _rep, _fora = w.extrair_links(texto or "")
+        if not links:
+            return "nenhum"
+        url = links[0]
+        m = w.ID_RE.search(url)
+        if m and not re.search(r"/playlist", url):
+            url = "https://www.youtube.com/watch?v=" + m.group(1)
+        with w.LOCK:
+            antigo = w.CFG["formato"]
+            if fmt in ("mp3", "original", "video"):
+                w.CFG["formato"] = fmt
+            try:
+                r = w.adicionar(url, w.CFG["modo_playlist"])
+            finally:
+                w.CFG["formato"] = antigo
+        return "ok" if r.get("add") else "ja"
+    except BaseException:
+        traceback.print_exc()
+        return "erro"
