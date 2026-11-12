@@ -261,19 +261,17 @@ def expandir_playlist(url):
     return titulo, links
 
 
-def obter_info(url, leve=False):
-    if leve:
-        # leitura leve: um cliente só, sem desafio de JavaScript (mais rápido). Se não der, cai no jeito normal.
-        try:
-            op = dict(OPTS, extractor_args={"youtube": {"player_client": ["android_vr"]}})
-            with yt_dlp.YoutubeDL(op) as ydl:
-                info = ydl.extract_info(url, download=False)
-                base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
-            if any(f.get("url") and f.get("acodec") not in (None, "none") for f in (info.get("formats") or [])):
-                return info, info.get("title", "sem título"), base
-        except Exception:
-            pass
-        dev_log("info", "leitura leve não serviu; usando a normal")
+CLIENTES_ALT = [None, ["mweb"], ["tv"], ["web_safari"], ["ios"]]
+
+
+def obter_info(url, alt=0):
+    """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
+    cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
+    if cli:
+        with yt_dlp.YoutubeDL(dict(OPTS, extractor_args={"youtube": {"player_client": cli}})) as ydl:
+            info = ydl.extract_info(url, download=False)
+            base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
+        return info, info.get("title", "sem título"), base
     with yt_dlp.YoutubeDL(OPTS) as ydl:
         info = ydl.extract_info(url, download=False)
         base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
@@ -386,12 +384,20 @@ def guardar_tit(vid, e):
 
 
 def eh_ao_vivo(vid):
+    """Lê a página do vídeo e procura a marca de transmissão ao vivo (rápido, sem o yt-dlp)."""
     try:
-        with yt_dlp.YoutubeDL(dict(OPTS, skip_download=True, socket_timeout=15, extract_flat=False)) as ydl:
-            info = ydl.extract_info("https://www.youtube.com/watch?v=" + vid, download=False, process=False)
-        return bool(info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"))
-    except Exception:
+        req = urllib.request.Request("https://www.youtube.com/watch?v=" + vid,
+                                     headers={"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+                                              "Accept-Language": "en-US,en;q=0.9", "Cookie": "CONSENT=YES+1"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            html = r.read(900000).decode("utf-8", "ignore")
+        if '"isLiveNow":true' in html or '"isLive":true' in html:
+            return True
+        if '"isUpcoming":true' in html:
+            return True
         return False
+    except Exception:
+        return None     # não deu para saber (não guarda em cache)
 
 
 LIVE_CACHE = {}
@@ -403,6 +409,8 @@ def ao_vivo(vid):
     if vid in LIVE_CACHE:
         return LIVE_CACHE[vid]
     r = eh_ao_vivo(vid)
+    if r is None:
+        return False
     if len(LIVE_CACHE) > 3000:
         LIVE_CACHE.clear()
     LIVE_CACHE[vid] = r
@@ -1032,7 +1040,7 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 3, "conv_n": 3, "leve": True, "ult_rede": 0.0, "ok": 0, "falha": 0}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0}
 DEV_LOCK = threading.Lock()
 class Limite:
     """Semáforo cujo limite pode mudar na hora (o painel do desenvolvedor ajusta)."""
@@ -1061,8 +1069,8 @@ class Limite:
             self.c.notify_all()
 
 
-REDE = Limite(3)   # modo rápido: quantos em rede ao mesmo tempo (no normal só há um trabalhador)
-CONV = Limite(3)   # modo rápido: quantas conversões ao mesmo tempo
+REDE = Limite(4)   # modo rápido: quantos em rede ao mesmo tempo (no normal só há um trabalhador)
+CONV = Limite(4)   # modo rápido: quantas conversões ao mesmo tempo
 
 
 def dev_log(tipo, msg):
@@ -1099,9 +1107,7 @@ def definir_ajustes(rede=None, conv=None, leve=None):
     if conv is not None:
         DEV["conv_n"] = max(2, min(6, int(conv)))
         CONV.set(DEV["conv_n"])
-    if leve is not None:
-        DEV["leve"] = bool(leve)
-    dev_log("ajuste", "rede=%d conversões=%d leitura leve=%s" % (DEV["rede_n"], DEV["conv_n"], "sim" if DEV["leve"] else "não"))
+    dev_log("ajuste", "downloads=%d conversões=%d" % (DEV["rede_n"], DEV["conv_n"]))
 
 
 def trabalhadores_ativos():
@@ -1153,21 +1159,33 @@ def conv_soltar(it):
         CONV.release()
 
 
-def dev_estado():
-    with DEV_LOCK:
-        med = [m for m in DEV["medidas"] if m.get("rap") == bool(DEV["rapido"] and not DEV["freio"])][-20:]
-        log = list(DEV["log"][-80:])
+def _resumo(med):
     n = len(med)
     media = {k: (round(sum(m[k] for m in med) / n, 1) if n else 0) for k in ("info", "dl", "conv", "espera", "total")}
+    ph = 0
+    if n:
+        ini = med[0]["fim"] - med[0]["total"]
+        span = med[-1]["fim"] - ini
+        ph = round(n / span * 3600) if span > 0 and n >= 2 else (round(3600 / media["total"]) if media["total"] else 0)
+    return {"n": n, "medias": media, "por_hora": ph}
+
+
+def dev_estado():
+    with DEV_LOCK:
+        todas = list(DEV["medidas"])
+        log = list(DEV["log"][-80:])
+    rap_ativo = bool(DEV["rapido"] and not DEV["freio"])
+    r_rap = _resumo([m for m in todas if m.get("rap")])
+    r_nor = _resumo([m for m in todas if not m.get("rap")])
+    atual = r_rap if rap_ativo else r_nor
     with LOCK:
         c = {}
         for i in ITENS:
             c[i["status"]] = c.get(i["status"], 0) + 1
-    return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": media, "n": n,
-            "por_hora": (round((n - 1) / (med[-1]["fim"] - med[0]["fim"]) * 3600) if n >= 3 and med[-1]["fim"] > med[0]["fim"]
-                         else (round(3600 / media["total"]) if media["total"] else 0)),
+    return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": atual["medias"], "n": atual["n"],
+            "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
-            "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "leve": DEV["leve"]}
+            "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"]}
 
 
 def processar(it):
@@ -1192,8 +1210,7 @@ def _processar(it):
     titulo_preview = it.get("titulo") or ""
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     try:
-        it["_leve"] = bool(it["_rap"] and DEV["leve"] and not it.get("_leve_off"))
-        info, titulo, base = obter_info(it["url"], it["_leve"])
+        info, titulo, base = obter_info(it["url"], it.get("_alt", 0))
     except Exception:
         info, titulo, base = {}, titulo_preview, ""
     # se o titulo novo vier vazio / generico, mantém o do preview
@@ -1230,13 +1247,7 @@ def _processar(it):
     it["pct"] = 0
     t0 = time.monotonic()
     it["_t"]["info"] = t0 - t_ini - it["_t"]["espera"]
-    try:
-        baixar(it, info, nome, it["destino"])
-    except Exception:
-        if it.get("_leve"):
-            it["_leve_off"] = True      # se falhou com a leitura leve, as próximas tentativas usam a normal
-            dev_log("info", "falha com leitura leve; próximas tentativas usam a normal")
-        raise
+    baixar(it, info, nome, it["destino"])
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
     t1 = time.monotonic()
@@ -1257,7 +1268,7 @@ def _processar(it):
         DEV["medidas"].append({"info": max(0, tt.get("info", 0)), "dl": max(0, tt.get("dl", 0)), "conv": max(0, tt.get("conv", 0)),
                                "espera": max(0, tt.get("espera", 0)), "total": time.monotonic() - t_ini,
                                "rap": bool(it.get("_rap")), "fim": time.time()})
-        del DEV["medidas"][:-60]
+        del DEV["medidas"][:-400]
     for k in ("_tf", "_td"):
         it.pop(k, None)
 
@@ -1278,7 +1289,7 @@ def esperar(seg, parar=None):
 def pegar():
     with LOCK:
         for i in ITENS:
-            if i["status"] == "fila":
+            if i["status"] == "fila" and i.get("_nao_antes", 0) <= time.time():
                 i.update(status="baixando", pct=0, vel="Lendo título…", erro="", cancel=False)
                 if SESS["inicio"] is None:
                     SESS["inicio"] = time.time()
@@ -1289,11 +1300,62 @@ def pegar():
 
 def ocioso():
     with LOCK:
-        if SESS["inicio"] and SESS["fim"] is None and not any(i["status"] == "baixando" for i in ITENS):
+        if SESS["inicio"] and SESS["fim"] is None and not any(i["status"] in ("baixando", "fila") for i in ITENS):
             SESS["fim"] = time.time()
     if not any(i["status"] == "baixando" for i in ITENS) and not PAUSA["on"]:
         aviso("")
     time.sleep(1)
+
+
+def indisponivel_de_verdade(it):
+    """Só vale como 'indisponível' se o próprio YouTube confirmar (oEmbed 400/401/403/404)."""
+    try:
+        m = re.search(r"([\w-]{11})(?:[&?#]|$)", it.get("url", ""))
+        vid = m.group(1) if m else ""
+        if not vid:
+            return False
+        TIT_CACHE.pop(vid, None)
+        return bool(titulo_rapido(vid).get("indisp"))
+    except Exception:
+        return False
+
+
+def tratar_falha(it, erro):
+    """Decide: tenta de novo mais tarde (sem travar a fila) ou desiste. Devolve True se foi bloqueio do YouTube."""
+    try:
+        limpar_cancelado(it)
+    except Exception:
+        pass
+    nome = (it.get("titulo") or it.get("url") or "")[:60]
+    bloqueio = bloqueio_youtube(erro)
+    e = erro.lower()
+    if bloqueio:
+        acionar_freio("YouTube pediu confirmação (bloqueio)")
+        DEV["esfriar"] = time.time() + 240
+    permanente = any(x in e for x in ("private video", "age", "members-only", "copyright")) and "try again" not in e
+    suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
+    if suspeito_indisp and not permanente:
+        permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
+    tent = it.get("_tent", 0) + 1
+    it["_tent"] = tent
+    if not permanente and tent <= 4:
+        atraso = 0 if (tent == 1 and not bloqueio) else (90 * tent if bloqueio else 12 * tent)
+        it["_alt"] = tent        # a cada tentativa usa outro 'cliente' do YouTube
+        it["_nao_antes"] = time.time() + atraso
+        with LOCK:
+            it.update(status="fila", pct=0, vel="Nova tentativa" + (" em %d s" % atraso if atraso else ""), erro="")
+        dev_log("tentativa", "%s (%d/4): %s" % (nome, tent, erro[:150]))
+        return bloqueio
+    DEV["falha"] += 1
+    dev_log("erro", "%s: %s" % (nome, erro[:200]))
+    if bloqueio:
+        msg = "YouTube bloqueou temporariamente (confirmação necessária)"
+    elif permanente:
+        msg = amigavel(erro)[:150]
+    else:
+        msg = "Falhou depois de várias tentativas. Use “Tentar de novo”."
+    marcar(it, "falha", msg)
+    return bloqueio
 
 
 def trabalhador(idx=0):
@@ -1301,6 +1363,10 @@ def trabalhador(idx=0):
     while True:
         try:
             if idx >= 1 and (not rapido_ligado() or idx >= trabalhadores_ativos()):
+                time.sleep(1)
+                continue
+            if DEV["esfriar"] > time.time() and restantes():
+                aviso("⏸️ Pausando um pouco para o YouTube esfriar. A fila continua em seguida.")
                 time.sleep(1)
                 continue
             if PAUSA["on"]:
@@ -1314,58 +1380,33 @@ def trabalhador(idx=0):
                 ocioso()
                 continue
             bloqueado = False
-            for tent in (1, 2, 3):
-                try:
-                    processar(it)
-                    break
-                except Exception as ex:
-                    erro = limpar_erro(ex)
-                    if "AO_VIVO" in erro or "code 183" in erro or "code -183" in erro:
-                        try:
-                            limpar_cancelado(it)
-                        except Exception:
-                            pass
-                        marcar(it, "falha", "Transmissão ao vivo: não dá para baixar")
-                        break
-                    if it["cancel"] or "cancelado_pelo_usuario" in erro:
-                        limpar_cancelado(it)
-                        if it.pop("_pausado", False):
-                            with LOCK:
-                                it.update(status="fila", cancel=False, pct=0, vel="", erro="")
-                            salvar_fila()
-                        else:
-                            dev_log("cancelada", "%s (motivo: %s)" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:120]))
-                            marcar(it, "cancelada")
-                        break
-                    if passageiro(erro) and tent < 3:
-                        if bloqueio_youtube(erro):
-                            acionar_freio("YouTube pediu confirmação (bloqueio)")
-                        dev_log("tentativa", "%s (%d/3): %s" % ((it.get("titulo") or it.get("url") or "")[:60], tent, erro[:160]))
-                        esp = 60 * tent if bloqueio_youtube(erro) else 20 * tent
-                        aviso(f"⏳ Falhou (tentativa {tent}/3). Tentando novamente em {esp} s.")
-                        esperar(esp, lambda: it["cancel"])
-                        aviso("")
-                        continue
-                    bloqueado = bloqueio_youtube(erro)
+            try:
+                processar(it)
+            except Exception as ex:
+                erro = limpar_erro(ex)
+                if "AO_VIVO" in erro or "code 183" in erro or "code -183" in erro:
                     try:
                         limpar_cancelado(it)
                     except Exception:
                         pass
-                    if bloqueado:
-                        acionar_freio("YouTube bloqueou temporariamente")
-                    dev_log("erro", "%s: %s" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:200]))
-                    DEV["falha"] += 1
-                    marcar(it, "falha", "YouTube bloqueou temporariamente (confirmação necessária)" if bloqueado else amigavel(erro)[:150])
-                    break
+                    marcar(it, "falha", "Transmissão ao vivo: não dá para baixar")
+                elif it["cancel"] or "cancelado_pelo_usuario" in erro:
+                    limpar_cancelado(it)
+                    if it.pop("_pausado", False):
+                        with LOCK:
+                            it.update(status="fila", cancel=False, pct=0, vel="", erro="")
+                        salvar_fila()
+                    else:
+                        dev_log("cancelada", "%s (motivo: %s)" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:120]))
+                        marcar(it, "cancelada")
+                else:
+                    bloqueado = tratar_falha(it, erro)
             feitos += 1
             resta = restantes()
             if resta == 0:
                 feitos = 0
             elif bloqueado:
                 feitos = 0
-                dev_log("pausa", "Pausa de 5 minutos para o YouTube esfriar")
-                aviso("⏸️ Pausando 5 minutos para o YouTube esfriar. A fila continuará em seguida.")
-                esperar(300, lambda: restantes() == 0)
             elif it.get("_rap") and rapido_ligado():
                 pass    # no modo rápido o intervalo entre downloads é controlado pela rede (rede_pegar)
             elif feitos >= CFG["lote"]:
@@ -1409,8 +1450,12 @@ def acao(d):
                 ITENS.remove(it)
         elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha"):
             it.update(status="fila", forcar=True, auto=True, cancel=False)
+        elif a == "tentar_falhas":
+            for i in ITENS:
+                if i["status"] == "falha":
+                    i.update(status="fila", pct=0, vel="", erro="", _tent=0, _alt=0, _nao_antes=0)
         elif it and a == "retentar" and it["status"] == "falha":
-            it.update(status="fila", auto=True, cancel=False)
+            it.update(status="fila", auto=True, cancel=False, _tent=0, _alt=0, _nao_antes=0)
     salvar_fila()
     return {"ok": True}
 
@@ -2288,7 +2333,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 </section>
 </div>
 
-<div class="sel" id="libbar" hidden><span id="selc"></span><span><button id="bsl">Limpar</button><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bdel">Apagar</button></span></div>
+<div class="sel" id="libbar" hidden><span id="selc"></span><span><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bdel">Apagar</button></span></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -2431,9 +2476,9 @@ const TITS=new Map(),TQ=[];let TA=0;
 function fetchTit(id){if(TITS.has(id)||TQ.includes(id))return;TQ.push(id);pumpT()}
 let RPVT=0;function refazer(){clearTimeout(RPVT);RPVT=setTimeout(()=>{rpv();ccount()},120)}
 const TRY={},LQ=[];let LA=0;
-function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer()}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
+function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer();toast('Transmissão ao vivo não dá para baixar')}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
 function pumpT(){while(TA<4&&TQ.length){const id=TQ.shift();TA++;const falhou=()=>{TRY[id]=(TRY[id]||0)+1;if(TRY[id]<=3)setTimeout(()=>fetchTit(id),2000*TRY[id]);else TITS.set(id,{titulo:'',canal:'',tmp:true})};
- api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=8){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
+ api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=40){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
 const titTxt=(id,d)=>d.titulo||((d.erro||d.tmp)?'Vídeo '+id:'Carregando...');
 function updTit(id){const d=TITS.get(id)||{};$$(`[data-tid="${id}"]`).forEach(e=>e.textContent=titTxt(id,d));$$(`[data-cid="${id}"]`).forEach(e=>e.textContent=d.canal||(d.erro?'Título indisponível':''))}
 const indisp=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).erro&&!TITS.get(x.id).titulo);
@@ -2550,6 +2595,7 @@ async function loadLib(){try{const d=await api('/api/arquivos');LIB=d;let sv=ACT
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
+ $('#bsa').hidden=!(LIBQ&&LIBQ.length>SEL.size);
  $('#selc').textContent=SEL.size?(SEL.size+(SEL.size>1?' selecionados':' selecionado')):'';
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
@@ -2673,6 +2719,7 @@ function stopPlayer(){
 function stopIf(r){if(CUR&&r.includes(CUR))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
+$('#bsa').onclick=()=>{(LIBQ||[]).forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagados');JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
 
 $('#bvar').onclick=async()=>{const b=$('#bvar');b.disabled=true;b.textContent='Procurando...';

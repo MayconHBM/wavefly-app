@@ -5,6 +5,13 @@ import json
 
 # (português, inglês, espanhol) - textos exatos da interface
 DICT = [
+    ("Transmissão ao vivo não dá para baixar", "Live streams cannot be downloaded", "Las transmisiones en vivo no se pueden descargar"),
+    ("Falhou depois de várias tentativas. Use “Tentar de novo”.", "Failed after several attempts. Use “Retry”.", "Falló tras varios intentos. Usa “Reintentar”."),
+    ("Tentar de novo as falhas", "Retry failed ones", "Reintentar las fallidas"),
+    ("Comparação do lote", "Batch comparison", "Comparación del lote"),
+    ("Rápido", "Fast", "Rápido"),
+    ("Normal", "Normal", "Normal"),
+    ("músicas", "songs", "canciones"),
     ("Cassete", "Cassette", "Casete"), ("Onda W", "W wave", "Onda W"), ("Vinil", "Vinyl", "Vinilo"), ("Avião", "Paper plane", "Avión de papel"),
     ("Ajustes do modo rápido", "Fast mode settings", "Ajustes del modo rápido"),
     ("Downloads ao mesmo tempo", "Simultaneous downloads", "Descargas simultáneas"),
@@ -235,12 +242,16 @@ html[lang="es"] body .tabs a{font-size:13px;letter-spacing:-.2px}
 #wfdev table{width:100%;border-collapse:collapse;font-size:14px}
 #wfdev td{padding:3px 0}#wfdev td:last-child{text-align:right;font-weight:700}
 #wfdev .wflog{font:11.5px/1.35 monospace;max-height:320px;overflow-y:auto;background:var(--sf);color:var(--fg);border-radius:10px;padding:8px;white-space:pre-wrap;overflow-wrap:anywhere;-webkit-user-select:text;user-select:text}
-#wfdev .wfseg{display:flex;gap:4px}
-#wfdev .wfseg button{min-width:34px;height:34px;border-radius:10px;border:0;background:var(--sf);color:var(--fg);font-weight:800}
-#wfdev .wfseg button.on{background:#d9692a;color:#fff}
+#wfdev .wfrow{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin:10px 0}
+#wfdev .wfrow .wfsw{align-self:flex-start}
+#wfdev .wfseg{display:flex;gap:6px;width:100%}
+#wfdev .wfseg button{flex:1;height:38px;border-radius:10px;border:2px solid var(--ln)!important;background:var(--sf)!important;color:var(--fg)!important;font-weight:800;box-shadow:none!important}
+#wfdev .wfseg button.on{background:#d9692a!important;border-color:#d9692a!important;color:#fff!important}
+#wfdev .wfcmp{margin-top:10px;padding-top:8px;border-top:1px solid var(--ln);font-size:13px}
+#wfdev .wfcmpt{font-weight:800;margin-bottom:4px}
 #wfdev .wficons{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-#wfdev .wfic{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border-radius:14px;border:2px solid transparent;background:var(--sf);color:var(--fg);font-size:12px;font-weight:700}
-#wfdev .wfic.on{border-color:#c8581f}
+#wfdev .wfic{box-shadow:none!important;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border-radius:14px;border:2px solid transparent;background:var(--sf);color:var(--fg);font-size:12px;font-weight:700}
+#wfdev .wfic.on{border-color:#d9692a!important;background:rgba(217,105,42,.22)!important}
 #wfdev .wfic span{display:block;width:54px;height:54px;border-radius:50%;overflow:hidden}
 #wfdev .wfic svg{width:100%;height:100%;display:block}
 #wfdev .wfic em{font-style:normal}
@@ -359,17 +370,20 @@ var PAUSADO=false;
 (function(){
   var bc=document.getElementById('bcanc');if(!bc)return;
   var bp=mk('<button class="t wfpb" id="bpausa">Pausar tudo</button>');bc.parentNode.insertBefore(bp,bc);
-  function pinta(){bp.textContent=PAUSADO?T('Continuar'):T('Pausar tudo')}
-  bp.onclick=function(){fetch('/api/pausa?v='+(PAUSADO?0:1)).then(function(r){return r.json()}).then(function(j){PAUSADO=!!j.pausado;pinta();try{tick()}catch(e){}}).catch(function(){})};
-  function ler(){if(document.hidden)return;var f=document.getElementById('fila');if(f&&f.hidden&&!PAUSADO)return;
-    fetch('/api/pausa').then(function(r){return r.json()}).then(function(j){if(!!j.pausado!==PAUSADO){PAUSADO=!!j.pausado}pinta()}).catch(function(){})}
-  setInterval(ler,2500);ler();
+  var bf=mk('<button class="t wfpb" id="btfal" hidden>Tentar de novo as falhas</button>');bc.parentNode.insertBefore(bf,bc);
+  var ATIVOS=0,FALHAS=0;
+  function pinta(){bp.textContent=PAUSADO?T('Continuar'):T('Pausar tudo');bp.hidden=!(PAUSADO||ATIVOS>0);bf.hidden=!FALHAS;bf.textContent=T('Tentar de novo as falhas')+' ('+FALHAS+')'}
+  function aplica(j){PAUSADO=!!j.pausado;ATIVOS=j.ativos||0;FALHAS=j.falhas||0;pinta()}
+  bp.onclick=function(){fetch('/api/pausa?v='+(PAUSADO?0:1)).then(function(r){return r.json()}).then(function(j){aplica(j);try{tick()}catch(e){}}).catch(function(){})};
+  bf.onclick=function(){fetch('/api/pausa?falhas=1').then(function(r){return r.json()}).then(function(j){aplica(j);try{tick()}catch(e){}}).catch(function(){})};
+  function ler(){if(document.hidden)return;fetch('/api/pausa').then(function(r){return r.json()}).then(aplica).catch(function(){})}
+  setInterval(ler,2000);ler();
   window.wfPausaRender=pinta;
 })();
 
 /* ---------- Painel do desenvolvedor ---------- */
 var DEVT=null;
-function aplicaRapido(){try{var q='/api/dev?rede='+(wfget('dev_rede')||3)+'&conv='+(wfget('dev_conv')||3)+'&leve='+(wfget('dev_leve')==='0'?0:1);fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
+function aplicaRapido(){try{var q='/api/dev?rede='+(wfget('dev_rede4')||4)+'&conv='+(wfget('dev_conv4')||4);fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
 aplicaRapido();
 function devAbrir(){
   if(document.getElementById('wfdev'))return;
@@ -379,7 +393,6 @@ function devAbrir(){
     '<div class="wfcx"><h3>Ajustes do modo rápido</h3>'+
     '<div class="wfrow"><span class="wft">Downloads ao mesmo tempo</span><span class="wfseg" id="wfsr"></span></div>'+
     '<div class="wfrow"><span class="wft">Conversões ao mesmo tempo</span><span class="wfseg" id="wfsc"></span></div>'+
-    '<div class="wfrow"><span class="wft">Leitura leve de informações</span><label class="wfsw"><input type="checkbox" id="wfleve"><i></i></label></div>'+
     '<p class="note">Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal.</p></div>'+
     '<div class="wfcx"><h3>Ícone do app (teste)</h3><div class="wficons" id="wficons"></div><p class="note">Escolha um. O ícone na tela inicial pode levar alguns segundos para trocar.</p></div>'+
     '<div class="wfcx"><h3>Tempo médio por música</h3><table id="wftb"></table></div>'+
@@ -392,10 +405,8 @@ function devAbrir(){
   function seg(id,chave,pad){var el=d.querySelector(id),at=+(wfget(chave)||pad);
     el.innerHTML=[2,3,4,5,6].map(function(n){return '<button type="button" data-n="'+n+'" class="'+(n===at?'on':'')+'">'+n+'</button>'}).join('');
     el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset(chave,b.dataset.n);
-      [].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});fetch('/api/dev?'+(chave==='dev_rede'?'rede':'conv')+'='+b.dataset.n).then(devAtualiza)}}
-  seg('#wfsr','dev_rede',3);seg('#wfsc','dev_conv',3);
-  var lv=d.querySelector('#wfleve');lv.checked=wfget('dev_leve')!=='0';
-  lv.onchange=function(){wfset('dev_leve',lv.checked?'1':'0');fetch('/api/dev?leve='+(lv.checked?1:0)).then(devAtualiza)};
+      [].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});fetch('/api/dev?'+(chave==='dev_rede4'?'rede':'conv')+'='+b.dataset.n).then(devAtualiza)}}
+  seg('#wfsr','dev_rede4',4);seg('#wfsc','dev_conv4',4);
   d.querySelector('#wfdx').onclick=function(){clearInterval(DEVT);DEVT=null;d.remove()};
   d.querySelector('#wflp').onclick=function(){fetch('/api/dev?limpar=1').then(function(){devAtualiza()})};
   d.querySelector('#wfcp').onclick=function(){var t=d.querySelector('#wflg').dataset.txt||'';
@@ -408,6 +419,10 @@ function devAbrir(){
   devAtualiza();DEVT=setInterval(devAtualiza,2000);
 }
 function lin(a,b){return '<tr><td>'+a+'</td><td>'+b+'</td></tr>'}
+function cmp(j){
+  function l(nome,r){return r&&r.n?'<div class="wfcmpl"><b>'+nome+'</b> · '+r.n+' '+T('músicas')+' · '+r.medias.total+' s · '+r.por_hora+'/h</div>':''}
+  var t=l(T('Normal'),j.normal)+l(T('Rápido'),j.veloz);
+  return t?'<div class="wfcmp"><div class="wfcmpt">'+T('Comparação do lote')+'</div>'+t+'</div>':''}
 function devAtualiza(){
   var d=document.getElementById('wfdev');if(!d)return;
   fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
@@ -415,7 +430,7 @@ function devAtualiza(){
     var modo=j.freio?{pt:'Freio ativo: voltou ao ritmo normal por causa de um bloqueio.',en:'Brake on: back to normal speed because of a block.',es:'Freno activo: volvió al ritmo normal por un bloqueo.'}[LANG]:j.rapido?{pt:'Modo rápido em uso.',en:'Fast mode in use.',es:'Modo rápido en uso.'}[LANG]:{pt:'Modo normal.',en:'Normal mode.',es:'Modo normal.'}[LANG];
     var mm=d.querySelector('#wfmodo');mm.textContent=modo+(j.pausado?(' '+T('Downloads pausados.')):'');
     var m=j.medias||{};
-    d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
+    d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n)+cmp(j):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
     var c=j.cont||{};
     d.querySelector('#wfct').innerHTML=lin(T('Concluídas'),j.ok)+lin(T('Falhas'),j.falha)+lin(T('Na fila'),c.fila||0)+lin('Baixando',c.baixando||0)+lin(T('Repetidas'),c.duplicada||0);
     var lg=(j.log||[]).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}).join('\n');

@@ -357,56 +357,15 @@ public class PythonService extends Service {
         if (musica) {
             atualizarSessao();
             b.setColor(0xFF3B2314).setColorized(true).setShowWhen(false);
-            Bitmap cb = capaBmp;
-            if (cb != null && capaDe.equals(pCapa)) b.setLargeIcon(cb);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly" : pTitulo);
-            if (baixando) {
-                b.setContentText(Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem);
-                b.setProgress(total, Math.min(feitos, total), false);
-            } else {
-                b.setContentText(pSub);
-            }
+            b.setContentText(pSub);
             b.setDeleteIntent(PendingIntent.getService(this, 9,
                     new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-            b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, Idioma.t(this, "Anterior", "Previous", "Anterior"), 5));
-            b.addAction(acao(ACTION_BACK10, R.drawable.ic_n_back10, "−10 s", 6));
-            b.addAction(acao(ACTION_PLAY_PAUSE,
-                    pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play,
-                    pTocando ? Idioma.t(this, "Pausar", "Pause", "Pausar") : Idioma.t(this, "Tocar", "Play", "Reproducir"), 3));
-            b.addAction(acao(ACTION_FWD10, R.drawable.ic_n_fwd10, "+10 s", 7));
-            b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, Idioma.t(this, "Próxima", "Next", "Siguiente"), 4));
-            Notification.DecoratedMediaCustomViewStyle estilo = new Notification.DecoratedMediaCustomViewStyle();
-            synchronized (this) {
-                if (sessao != null) estilo.setMediaSession(sessao.getSessionToken());
-            }
-            estilo.setShowActionsInCompactView(1, 2, 3);
-            b.setStyle(estilo);
-            android.widget.RemoteViews rv = new android.widget.RemoteViews(getPackageName(), R.layout.notif_player);
-            rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly" : pTitulo);
-            long pos = posAgora();
-            String sub = pSub;
-            if (pDurMs > 0) sub = (sub.isEmpty() ? "" : sub + " · ") + fmt(pos) + " / " + fmt(pDurMs);
-            rv.setTextViewText(R.id.n_sub, sub);
-            if (pDurMs > 0) {
-                rv.setViewVisibility(R.id.n_prog, android.view.View.VISIBLE);
-                rv.setProgressBar(R.id.n_prog, (int) (pDurMs / 1000), (int) (pos / 1000), false);
-            } else {
-                rv.setViewVisibility(R.id.n_prog, android.view.View.GONE);
-            }
-            if (baixando && total > 0) {
-                rv.setViewVisibility(R.id.n_dl, android.view.View.VISIBLE);
-                rv.setProgressBar(R.id.n_dl, total, Math.min(feitos, total), false);
-                rv.setTextViewText(R.id.n_dltxt, Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem);
-                rv.setViewVisibility(R.id.n_dltxt, android.view.View.VISIBLE);
-            } else {
-                rv.setViewVisibility(R.id.n_dl, android.view.View.GONE);
-                rv.setViewVisibility(R.id.n_dltxt, android.view.View.GONE);
-            }
-            rv.setOnClickPendingIntent(R.id.n_x, PendingIntent.getService(this, 10,
-                    new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
-                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-            b.setCustomContentView(rv);
+            android.widget.RemoteViews rv = visaoMusica(R.layout.notif_player, baixando, feitos, total, contagem, true);
+            android.widget.RemoteViews rvp = visaoMusica(R.layout.notif_player_small, baixando, feitos, total, contagem, false);
+            b.setStyle(new Notification.DecoratedCustomViewStyle());
+            b.setCustomContentView(rvp);
             b.setCustomBigContentView(rv);
         } else {
             b.setContentTitle(dlPausado ? Idioma.t(this, "Downloads pausados", "Downloads paused", "Descargas en pausa")
@@ -418,6 +377,54 @@ public class PythonService extends Service {
             b.addAction(acao(ACTION_CANCEL, 0, Idioma.t(this, "Cancelar", "Cancel", "Cancelar"), 2));
         }
         return b.build();
+    }
+
+    private PendingIntent pend(String action, int codigo) {
+        return PendingIntent.getService(this, codigo, new Intent(this, PythonService.class).setAction(action),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** Layout próprio da notificação do player (sem a barra do sistema): capa, título, barra laranja e botões. */
+    private android.widget.RemoteViews visaoMusica(int layout, boolean baixando, int feitos, int total, String contagem, boolean grande) {
+        android.widget.RemoteViews rv = new android.widget.RemoteViews(getPackageName(), layout);
+        rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly" : pTitulo);
+        long pos = posAgora();
+        Bitmap cb = capaBmp;
+        if (cb != null && capaDe.equals(pCapa)) rv.setImageViewBitmap(R.id.n_capa, cb);
+        else rv.setImageViewResource(R.id.n_capa, R.drawable.ic_notification);
+        if (grande) {
+            rv.setTextViewText(R.id.n_sub, pSub);
+            rv.setTextViewText(R.id.n_t1, fmt(pos));
+            rv.setTextViewText(R.id.n_t2, pDurMs > 0 ? fmt(pDurMs) : "");
+            rv.setViewVisibility(R.id.n_linha_prog, pDurMs > 0 ? android.view.View.VISIBLE : android.view.View.GONE);
+            rv.setOnClickPendingIntent(R.id.n_b10, pend(ACTION_BACK10, 6));
+            rv.setOnClickPendingIntent(R.id.n_f10, pend(ACTION_FWD10, 7));
+            rv.setOnClickPendingIntent(R.id.n_x, pend(ACTION_DISPENSADA, 10));
+            if (baixando && total > 0) {
+                rv.setViewVisibility(R.id.n_dl, android.view.View.VISIBLE);
+                rv.setProgressBar(R.id.n_dl, total, Math.min(feitos, total), false);
+                rv.setTextViewText(R.id.n_dltxt, Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem);
+                rv.setViewVisibility(R.id.n_dltxt, android.view.View.VISIBLE);
+            } else {
+                rv.setViewVisibility(R.id.n_dl, android.view.View.GONE);
+                rv.setViewVisibility(R.id.n_dltxt, android.view.View.GONE);
+            }
+        } else {
+            String sub = pSub;
+            if (baixando && total > 0) sub = (sub.isEmpty() ? "" : sub + " · ") + contagem;
+            rv.setTextViewText(R.id.n_sub, sub);
+        }
+        if (pDurMs > 0) {
+            rv.setViewVisibility(R.id.n_prog, android.view.View.VISIBLE);
+            rv.setProgressBar(R.id.n_prog, (int) (pDurMs / 1000), (int) (pos / 1000), false);
+        } else {
+            rv.setViewVisibility(R.id.n_prog, android.view.View.GONE);
+        }
+        rv.setOnClickPendingIntent(R.id.n_prev, pend(ACTION_PREV, 5));
+        rv.setOnClickPendingIntent(R.id.n_next, pend(ACTION_NEXT, 4));
+        rv.setOnClickPendingIntent(R.id.n_play, pend(ACTION_PLAY_PAUSE, 3));
+        rv.setImageViewResource(R.id.n_play, pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play);
+        return rv;
     }
 
     private Notification.Action acao(String action, int iconeRes, String titulo, int codigo) {
@@ -459,7 +466,6 @@ public class PythonService extends Service {
             MediaMetadata.Builder md = new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
-            if (pDurMs > 0) md.putLong(MediaMetadata.METADATA_KEY_DURATION, pDurMs);
             Bitmap cb = capaBmp;
             if (cb != null && capaDe.equals(pCapa)) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());

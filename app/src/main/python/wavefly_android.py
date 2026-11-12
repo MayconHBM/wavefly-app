@@ -275,14 +275,18 @@ def rotas(w):
                 if u.path == "/api/pausa":
                     if (q.get("v") or [""])[0] in ("0", "1"):
                         w.definir_pausa((q.get("v") or ["0"])[0] == "1")
-                    return self._json({"pausado": bool(w.PAUSA["on"])})
+                    if (q.get("falhas") or [""])[0] == "1":
+                        w.acao({"acao": "tentar_falhas"})
+                    with w.LOCK:
+                        ativos = sum(1 for i in w.ITENS if i["status"] in ("fila", "baixando"))
+                        falhas = sum(1 for i in w.ITENS if i["status"] == "falha")
+                    return self._json({"pausado": bool(w.PAUSA["on"]), "ativos": ativos, "falhas": falhas})
                 if u.path == "/api/dev":
                     if (q.get("rapido") or [""])[0] in ("0", "1"):
                         w.definir_rapido((q.get("rapido") or ["0"])[0] == "1")
-                    if any((q.get(k) or [""])[0] for k in ("rede", "conv", "leve")):
+                    if any((q.get(k) or [""])[0] for k in ("rede", "conv")):
                         g = lambda k: (q.get(k) or [""])[0]
-                        w.definir_ajustes(int(g("rede")) if g("rede") else None, int(g("conv")) if g("conv") else None,
-                                          (g("leve") == "1") if g("leve") else None)
+                        w.definir_ajustes(int(g("rede")) if g("rede") else None, int(g("conv")) if g("conv") else None)
                     if (q.get("limpar") or [""])[0]:
                         with w.DEV_LOCK:
                             w.DEV["log"].clear()
