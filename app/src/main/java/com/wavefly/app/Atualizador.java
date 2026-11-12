@@ -22,7 +22,7 @@ import java.net.URL;
 
 /** Procura uma versão nova do app no GitHub e instala com um toque. */
 final class Atualizador {
-    private static final String API = "https://api.github.com/repos/MayconHBM/wavefly-app/releases/latest";
+    private static final String API = "https://api.github.com/repos/MayconHBM/wavefly-app/releases?per_page=15";
     private static long ultima = 0;
 
     private Atualizador() {
@@ -43,11 +43,23 @@ final class Atualizador {
                 byte[] b = new byte[8192];
                 int n;
                 while ((n = in.read(b)) > 0) bo.write(b, 0, n);
-                JSONObject j = new JSONObject(bo.toString("UTF-8"));
-                String corpo = j.optString("body", "");
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("versionCode:\\s*(\\d+)").matcher(corpo);
-                int remoto = m.find() ? Integer.parseInt(m.group(1)) : 0;
+                JSONArray lista = new JSONArray(bo.toString("UTF-8"));
                 int local = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionCode;
+                String vn = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName;
+                boolean teste = vn != null && vn.contains("teste");   // quem usa versão de teste também recebe as de teste
+                JSONObject j = new JSONObject();
+                int remoto = 0;
+                java.util.regex.Pattern pv = java.util.regex.Pattern.compile("versionCode:\\s*(\\d+)");
+                for (int k = 0; k < lista.length(); k++) {
+                    JSONObject r = lista.getJSONObject(k);
+                    if (r.optBoolean("draft") || (r.optBoolean("prerelease") && !teste)) continue;
+                    java.util.regex.Matcher mm = pv.matcher(r.optString("body", ""));
+                    int v = mm.find() ? Integer.parseInt(mm.group(1)) : 0;
+                    if (v > remoto) {
+                        remoto = v;
+                        j = r;
+                    }
+                }
                 String url = "";
                 JSONArray as = j.optJSONArray("assets");
                 for (int i = 0; as != null && i < as.length(); i++) {

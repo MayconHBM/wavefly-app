@@ -78,10 +78,8 @@ final class FfmpegSetup {
             }
             deleteRecursive(bin);
             bin.mkdirs();
-            android.system.Os.symlink(exe.getAbsolutePath(), new File(bin, "ffmpeg").getAbsolutePath());
-            if (probe.exists()) {
-                android.system.Os.symlink(probe.getAbsolutePath(), new File(bin, "ffprobe").getAbsolutePath());
-            }
+            fazerLink(exe, new File(bin, "ffmpeg"));
+            if (probe.exists()) fazerLink(probe, new File(bin, "ffprobe"));
 
             Set<String> dirs = new LinkedHashSet<>();
             collectLibDirs(root, dirs);
@@ -174,6 +172,19 @@ final class FfmpegSetup {
     private static void writeText(File f, String s) throws IOException {
         try (OutputStream out = new FileOutputStream(f)) {
             out.write(s.getBytes("UTF-8"));
+        }
+    }
+
+    /** Cria o atalho; se já existir (inclusive quebrado, de uma versão anterior), apaga e cria de novo. */
+    private static void fazerLink(File alvo, File link) throws Exception {
+        try {
+            android.system.Os.remove(link.getAbsolutePath());
+        } catch (Throwable ignored) {
+        }
+        try {
+            android.system.Os.symlink(alvo.getAbsolutePath(), link.getAbsolutePath());
+        } catch (android.system.ErrnoException e) {
+            if (e.errno != android.system.OsConstants.EEXIST) throw e;
         }
     }
 

@@ -666,10 +666,13 @@ def capa_de(pth):
     dados = _baixar_thumb(vid) if vid else None
     if not dados and eh_video and FFMPEG:
         try:
-            r = subprocess.run([FFMPEG, "-y", "-v", "error", "-ss", "1", "-i", pth, "-vframes", "1", "-vf", "scale=480:-2",
-                                "-c:v", "mjpeg", "-f", "image2pipe", "-"], capture_output=True, timeout=20)
-            if len(r.stdout) > 1000 and _mime_img(r.stdout):
-                dados = r.stdout
+            for ss in ("1", "0"):
+                r = subprocess.run([FFMPEG, "-y", "-v", "error", "-ss", ss, "-i", pth, "-frames:v", "1", "-vf", "scale=480:-2",
+                                    "-pix_fmt", "yuvj420p", "-strict", "unofficial", "-c:v", "mjpeg", "-f", "image2pipe", "-"],
+                                   capture_output=True, timeout=25)
+                if len(r.stdout) > 1000 and _mime_img(r.stdout):
+                    dados = r.stdout
+                    break
         except Exception:
             pass
     if not dados and not vid:
@@ -869,6 +872,17 @@ def limpar_cancelado(it):
     limpar_pasta_vazia(os.path.join(d, nome))
 
 
+def amigavel(erro):
+    e = (erro or "").lower()
+    if any(x in e for x in ("unsupported url", "extractor", "not a valid url", "no suitable", "is not a valid", "invalid url")):
+        return "Link não reconhecido. Confira se ele está correto."
+    if any(x in e for x in ("video unavailable", "private video", "has been removed", "no longer available", "this video is", "not available")):
+        return "Vídeo indisponível (privado, removido ou bloqueado)."
+    if "age" in e and ("confirm" in e or "restrict" in e or "inappropriate" in e):
+        return "Vídeo com restrição de idade: não dá para baixar."
+    return erro
+
+
 def marcar(it, status, erro=""):
     with LOCK:
         it["status"], it["erro"] = status, erro
@@ -908,6 +922,10 @@ def baixar(it, info, nome, destino):
             opts["merge_output_format"] = "mp4"
             if com_capa:
                 pps.append({"key": "FFmpegMetadata", "add_metadata": True})
+        elif it["fmt"] == "mp3" and it.get("_rap"):
+            # modo rápido: só converte; etiquetas e capa entram depois, sem refazer o arquivo inteiro
+            pps.append({"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": str(it["qual"])})
+            opts["postprocessor_args"] = {"extractaudio": ["-compression_level", "7", "-threads", "2"]}
         elif it["fmt"] == "mp3":
             if com_capa:
                 opts["writethumbnail"] = True
@@ -945,6 +963,33 @@ def baixar(it, info, nome, destino):
         else:
             raise
     limpar_capas()
+    if it.get("_rap") and it["fmt"] == "mp3":
+        etiquetar_mp3(os.path.join(destino, nome + ".mp3"), info)
+
+
+def etiquetar_mp3(caminho, info):
+    """Título, artista, endereço e capa no MP3 (rápido, sem o ffmpeg)."""
+    try:
+        from mutagen.id3 import ID3, ID3NoHeaderError, TIT2, TPE1, COMM, APIC
+        try:
+            tg = ID3(caminho)
+        except ID3NoHeaderError:
+            tg = ID3()
+        tit = info.get("track") or info.get("title") or ""
+        art = info.get("artist") or info.get("creator") or info.get("uploader") or info.get("channel") or ""
+        if tit:
+            tg.add(TIT2(encoding=3, text=tit))
+        if art:
+            tg.add(TPE1(encoding=3, text=re.sub(r"\s*-\s*Topic$", "", art)))
+        if info.get("webpage_url"):
+            tg.add(COMM(encoding=3, lang="por", desc="", text=info["webpage_url"]))
+        vid = info.get("id") or ""
+        img = _baixar_thumb(vid) if len(vid) == 11 else None
+        if img:
+            tg.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Capa", data=img))
+        tg.save(caminho, v2_version=3)
+    except Exception as ex:
+        dev_log("etiqueta", "%s: %s" % (os.path.basename(caminho)[:50], str(ex)[:120]))
 
 
 def rel_do_arquivo(destino, nome, exts):
@@ -958,10 +1003,10 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 1.5, "ult_rede": 0.0, "ok": 0, "falha": 0}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "ult_rede": 0.0, "ok": 0, "falha": 0}
 DEV_LOCK = threading.Lock()
-REDE = threading.Semaphore(1)   # só um download de rede por vez (o YouTube vê o mesmo ritmo de pedidos)
-CONV = threading.Semaphore(1)   # só uma conversão por vez
+REDE = threading.Semaphore(3)   # modo rápido: até 3 em rede ao mesmo tempo (no normal só há um trabalhador)
+CONV = threading.Semaphore(3)   # modo rápido: até 3 conversões ao mesmo tempo
 
 
 def dev_log(tipo, msg):
@@ -977,7 +1022,18 @@ def rapido_ligado():
 def definir_pausa(v):
     PAUSA["on"] = bool(v)
     dev_log("pausa", "Downloads pausados" if PAUSA["on"] else "Downloads retomados")
-    aviso("⏸️ Downloads pausados. A música em andamento termina antes de parar." if PAUSA["on"] else "")
+    if PAUSA["on"]:
+        parou = False
+        with LOCK:
+            for i in ITENS:
+                if i["status"] == "baixando":
+                    i["_pausado"] = True
+                    i["cancel"] = True
+                    i["vel"] = "Pausando…"
+                    parou = True
+        if parou:
+            matar_ffmpeg()
+    aviso("⏸️ Downloads pausados. O que estava baixando volta para o começo da fila." if PAUSA["on"] else "")
 
 
 def definir_rapido(v):
@@ -1027,7 +1083,7 @@ def conv_soltar(it):
 
 def dev_estado():
     with DEV_LOCK:
-        med = list(DEV["medidas"][-20:])
+        med = [m for m in DEV["medidas"] if m.get("rap") == bool(DEV["rapido"] and not DEV["freio"])][-20:]
         log = list(DEV["log"][-80:])
     n = len(med)
     media = {k: (round(sum(m[k] for m in med) / n, 1) if n else 0) for k in ("info", "dl", "conv", "espera", "total")}
@@ -1036,7 +1092,8 @@ def dev_estado():
         for i in ITENS:
             c[i["status"]] = c.get(i["status"], 0) + 1
     return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": media, "n": n,
-            "por_hora": round(3600 / media["total"]) if media["total"] else 0,
+            "por_hora": (round((n - 1) / (med[-1]["fim"] - med[0]["fim"]) * 3600) if n >= 3 and med[-1]["fim"] > med[0]["fim"]
+                         else (round(3600 / media["total"]) if media["total"] else 0)),
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log}
 
 
@@ -1118,7 +1175,8 @@ def _processar(it):
     with DEV_LOCK:
         DEV["ok"] += 1
         DEV["medidas"].append({"info": max(0, tt.get("info", 0)), "dl": max(0, tt.get("dl", 0)), "conv": max(0, tt.get("conv", 0)),
-                               "espera": max(0, tt.get("espera", 0)), "total": time.monotonic() - t_ini})
+                               "espera": max(0, tt.get("espera", 0)), "total": time.monotonic() - t_ini,
+                               "rap": bool(it.get("_rap")), "fim": time.time()})
         del DEV["medidas"][:-60]
     for k in ("_tf", "_td"):
         it.pop(k, None)
@@ -1162,7 +1220,7 @@ def trabalhador(idx=0):
     feitos = 0
     while True:
         try:
-            if idx == 1 and not rapido_ligado():
+            if idx >= 1 and not rapido_ligado():
                 time.sleep(1)
                 continue
             if PAUSA["on"]:
@@ -1191,7 +1249,13 @@ def trabalhador(idx=0):
                         break
                     if it["cancel"] or "cancelado_pelo_usuario" in erro:
                         limpar_cancelado(it)
-                        marcar(it, "cancelada")
+                        if it.pop("_pausado", False):
+                            with LOCK:
+                                it.update(status="fila", cancel=False, pct=0, vel="", erro="")
+                            salvar_fila()
+                        else:
+                            dev_log("cancelada", "%s (motivo: %s)" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:120]))
+                            marcar(it, "cancelada")
                         break
                     if passageiro(erro) and tent < 3:
                         if bloqueio_youtube(erro):
@@ -1211,7 +1275,7 @@ def trabalhador(idx=0):
                         acionar_freio("YouTube bloqueou temporariamente")
                     dev_log("erro", "%s: %s" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:200]))
                     DEV["falha"] += 1
-                    marcar(it, "falha", "YouTube bloqueou temporariamente (confirmação necessária)" if bloqueado else erro[:150])
+                    marcar(it, "falha", "YouTube bloqueou temporariamente (confirmação necessária)" if bloqueado else amigavel(erro)[:150])
                     break
             feitos += 1
             resta = restantes()
@@ -1238,6 +1302,8 @@ def trabalhador(idx=0):
 
 def acao(d):
     a, iid = d.get("acao"), d.get("id")
+    if a in ("cancelar_tudo", "remover", "limpar"):
+        dev_log("acao", "pedido de %s (item %s)" % (a, iid))
     with LOCK:
         it = next((i for i in ITENS if i["id"] == iid), None)
         if a == "cancelar_tudo":
@@ -1666,6 +1732,17 @@ class H(BaseHTTPRequestHandler):
                 pass
 
     def _capa(self, rel):
+        if rel.startswith("yt:") and re.fullmatch(r"[\w-]{11}", rel[3:]):
+            dados = _baixar_thumb(rel[3:])
+            if dados:
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(dados)))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(dados)
+                return
+            return self._json({"erro": "sem capa"}, 404)
         pth = caminho_seguro(rel)
         img = capa_de(pth) if pth and os.path.isfile(pth) else None
         if not img:
@@ -1745,8 +1822,8 @@ header{display:flex;align-items:center;gap:12px;padding:calc(16px + env(safe-are
 .sp1{flex:1}
 .ib{width:38px;height:38px;padding:0;border-radius:12px;display:grid;place-items:center;background:var(--cd);border:1px solid var(--ln);color:var(--fg)}
 .tabs{display:flex;gap:4px;background:var(--sf);border-radius:14px;padding:3px;margin-bottom:4px;border:1px solid var(--ln)}
-.tabs a{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 4px;border-radius:11px;color:var(--mut);font-size:14px;font-weight:600;cursor:pointer}
-.tabs a svg.i{width:16px;height:16px}
+.tabs a{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;padding:9px 1px;border-radius:11px;color:var(--mut);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tabs a svg.i{width:14px;height:14px;flex:none}
 .tabs a.on{background:var(--cd);color:var(--at);box-shadow:var(--sh)}
 .cb{display:inline-block;font-size:11px;background:var(--ac);color:#fff;padding:0 6px;border-radius:99px;font-weight:700}
 .v{animation:fd .2s ease}
@@ -1761,7 +1838,7 @@ button.t{background:none;padding:4px 6px;color:var(--mut);font-size:13.5px;white
 button.more{display:block;width:100%;margin:12px 0 4px;padding:12px;font-weight:600;color:var(--at);background:var(--cd);border:1px solid var(--ln);border-radius:12px}
 textarea,input[type=text],input[type=number]{width:100%;background:var(--cd);border:1px solid var(--ln);border-radius:14px;color:var(--fg);padding:12px 14px;font:inherit;font-size:14.5px;outline:none}
 textarea:focus,input[type=text]:focus{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 15%,transparent)}
-textarea{min-height:120px;resize:vertical}
+textarea{min-height:120px;resize:none}
 input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac);flex:none;border-radius:4px}
 .mut{color:var(--mut)}.sm{font-size:13px}.er{color:var(--err)}
 .row{display:flex;gap:8px;align-items:center;justify-content:space-between}
@@ -2091,7 +2168,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <div class="w">
 <header><span class="mk"><svg viewBox="0 0 80 52" aria-hidden="true"><rect x="1.5" y="1.5" width="77" height="49" rx="6" fill="#f1dfb8" stroke="#4a2a17" stroke-width="2.6"/><circle cx="6.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="6.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><rect x="11" y="5.5" width="58" height="21" rx="2.5" fill="#e8873a" stroke="#4a2a17" stroke-width="1.4"/><path d="M11 8a2.5 2.5 0 0 1 2.5-2.5h53A2.5 2.5 0 0 1 69 8v2.5H11z" fill="#c8581f"/><rect x="14" y="13" width="52" height="10" rx="1.5" fill="#f3e3c3" stroke="#4a2a17" stroke-width=".6"/><path d="M16.5 16.5h27M16.5 20h17" stroke="#4a2a17" stroke-width="1" stroke-linecap="round" opacity=".7"/><circle cx="58" cy="18" r="3.6" fill="#e8873a" stroke="#4a2a17" stroke-width=".9"/><circle cx="58" cy="18" r="1.2" fill="#4a2a17"/><rect x="17" y="29" width="46" height="14" rx="7" fill="#2a1a10" stroke="#4a2a17" stroke-width="1.4"/><path d="M29 42.4H51" stroke="#6b4228" stroke-width="1.2"/><circle cx="29" cy="36" r="6.4" fill="#6b4228"/><circle cx="51" cy="36" r="5" fill="#6b4228"/><g class="mkr" style="transform-origin:29px 36px"><circle cx="29" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M29 31.9v8.2M25.5 34l7 4M32.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><g class="mkr" style="transform-origin:51px 36px"><circle cx="51" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M51 31.9v8.2M47.5 34l7 4M54.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><path d="M22 45.5 25 49.2H55L58 45.5z" fill="#d9bf8c" stroke="#4a2a17" stroke-width="1.1" stroke-linejoin="round"/><circle cx="32" cy="47.3" r="1.1" fill="#2a1a10"/><circle cx="48" cy="47.3" r="1.1" fill="#2a1a10"/><path d="M5 12v26" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity=".35"/></svg></span><b class="wm">Wave<i>Fly</i></b><span class="sp1"></span>
 <button class="ib" id="bset" aria-label="Ajustes" data-i="gear"></button></header>
-<nav class="tabs"><a data-go="baixar" class="on"><span data-i="down"></span>Baixar</a><a data-go="nome"><span data-i="search"></span>Buscar<span class="cb" id="nb" hidden></span></a><a data-go="musicas"><span data-i="folder"></span>Biblioteca</a></nav>
+<nav class="tabs"><a data-go="baixar" class="on"><span data-i="down"></span>Baixar</a><a data-go="nome"><span data-i="search"></span>Buscar<span class="cb" id="nb" hidden></span></a><a data-go="explorar"><span data-i="explore"></span>Explorar</a><a data-go="musicas"><span data-i="folder"></span>Biblioteca</a></nav>
 
 <section class="v" id="v-baixar">
   <h1>Baixar</h1>
@@ -2126,9 +2203,11 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div id="res" style="margin-top:10px"></div>
 </section>
 
+<section class="v" id="v-explorar" hidden></section>
+
 <section class="v" id="v-musicas" hidden>
   <div class="row" style="margin-top:14px">
-    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="videos">Vídeos</button><button data-v="rep">Repetidas</button></div>
+    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="videos">Vídeos</button></div>
     <span class="sm mut" id="libinfo"></span>
   </div>
   <div id="m-todas" style="margin-top:12px"><input type="text" id="lf" placeholder="Filtrar músicas..."><label id="wrapvid" hidden style="display:flex;gap:8px;align-items:center;margin:6px 0 10px;cursor:pointer;font-size:14px"><input type="checkbox" id="chkvid" style="width:18px;height:18px"> Mostrar vídeos <span class="sm mut">(prioriza músicas)</span></label><div id="lib"></div></div>
@@ -2182,7 +2261,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 const APPN='{{APP}}';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const I={
+const I={explore:'<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor"/>',
  down:'<path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"/>',
  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
  note:'<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
@@ -2241,7 +2320,7 @@ function rcfg(){const f=C.formato;
  let rs=f==='mp3'?`MP3`:f==='video'?`MP4 · ${C.res}p`:'Original';rs+=C.servidor?' · web':' · '+C.atual;
  $$('.js-resumo').forEach(e=>e.textContent=rs);
  $('#g-p').hidden=!!C.servidor;$('#srvnote').hidden=!C.servidor;
- $('#bdel').hidden=!!C.servidor;$('#bdl').hidden=$('#bzip').hidden=!C.servidor;$('#segm [data-v=rep]').hidden=!!C.servidor;
+ $('#bdel').hidden=!!C.servidor;$('#bdl').hidden=$('#bzip').hidden=!C.servidor;
  $('#warn').hidden=C.pasta_ok!==false;$('#warnand').hidden=!C.android;
  let seen='';try{seen=localStorage.getItem('wf_hello')}catch(e){}$('#hello').hidden=!(C.primeira&&!seen);const jk=C.atual+'|'+C.formato+'|'+C.caminho;if(jk!==JKEY){JKEY=jk;JA.clear();JAK.clear();Object.keys(PLP).forEach(k=>delete PLP[k]);if(LST.length)cnt()}ccount();updsel()}
 async function cfg(d){try{C=await api('/api/config',d);rcfg()}catch(e){toast(e.message)}}
@@ -2904,7 +2983,8 @@ def main():
     carregar_index()
     restaurar_fila()
     threading.Thread(target=trabalhador, daemon=True).start()
-    threading.Thread(target=trabalhador, args=(1,), daemon=True).start()
+    for _k in (1, 2, 3):
+        threading.Thread(target=trabalhador, args=(_k,), daemon=True).start()
     if SERVIDOR:
         threading.Thread(target=faxina, daemon=True).start()
     try:

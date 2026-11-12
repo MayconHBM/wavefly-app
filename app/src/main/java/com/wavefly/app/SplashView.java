@@ -106,29 +106,6 @@ class SplashView extends android.view.View {
         float u = cw / 80f;
         double T = t * 2 * Math.PI;
 
-        // brilho de fundo
-        p.setStyle(Paint.Style.FILL);
-        p.setShader(new RadialGradient(w / 2f, cy0, cw * 0.95f,
-                escuro ? 0x55D9692A : 0x44E8873A, 0x00000000, Shader.TileMode.CLAMP));
-        c.drawCircle(w / 2f, cy0, cw * 0.95f, p);
-        p.setShader(null);
-        // ondas sonoras saindo da fita
-        p.setStyle(Paint.Style.STROKE);
-        for (int k = 0; k < 3; k++) {
-            float f = (t + k / 3f) % 1f;
-            float rr = cw * (0.62f + 0.55f * f);
-            p.setStrokeWidth(1.6f * u);
-            p.setColor(((int) (70 * (1f - f)) << 24) | 0xD9692A);
-            c.drawCircle(w / 2f, cy0, rr, p);
-        }
-        // notas subindo
-        for (int k = 0; k < 5; k++) {
-            float f = (t * 1f + k * 0.2f) % 1f;
-            float nx = w / 2f + (k - 2) * cw * 0.3f + (float) Math.sin(T + k * 1.7) * 3f * u;
-            float ny = y0 - 2 * u - f * cw * 0.45f;
-            nota(c, nx, ny, u * 0.9f, ((int) (200 * Math.sin(Math.PI * f)) << 24) | 0xD9692A);
-        }
-
         // sombra
         p.setStyle(Paint.Style.FILL);
         p.setColor(0x33000000);
@@ -201,15 +178,6 @@ class SplashView extends android.view.View {
         p.setStyle(Paint.Style.FILL);
         reel(c, x0 + 28 * u, y0 + 38 * u, 4.4f * u, t * 720f);
         reel(c, x0 + 52 * u, y0 + 38 * u, 4.4f * u, t * 720f);
-        // reflexo no vidro da janela
-        p.setColor(0x22FFFFFF);
-        android.graphics.Path vid = new android.graphics.Path();
-        vid.moveTo(x0 + 20 * u, y0 + 31 * u);
-        vid.lineTo(x0 + 34 * u, y0 + 31 * u);
-        vid.lineTo(x0 + 26 * u, y0 + 45 * u);
-        vid.lineTo(x0 + 17 * u, y0 + 45 * u);
-        vid.close();
-        c.drawPath(vid, p);
         // base trapezoidal com furos
         p.setColor(0xFFD9BF8C);
         android.graphics.Path base = new android.graphics.Path();

@@ -28,6 +28,8 @@ html body #v-baixar .js-chip{display:none!important}
 /* é um aplicativo, não um site: não seleciona nem copia os textos da interface */
 html,body,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 input,textarea,[contenteditable="true"]{-webkit-user-select:text!important;user-select:text!important}
+.lr{content-visibility:auto;contain-intrinsic-size:auto 60px}
+.lr .cv img{will-change:auto}
 img{-webkit-user-drag:none}
 /* botão X para tirar um link da lista */
 html body .pr .pvx{flex:none;margin-left:auto;width:34px;height:34px;min-width:34px;padding:0;border-radius:50%;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
@@ -267,8 +269,28 @@ def rotas(w):
         try:
             from urllib.parse import urlparse, parse_qs
             u = urlparse(self.path)
-            if u.path in ("/api/combina", "/api/ytdlp", "/api/pausa", "/api/dev") and self._host_ok():
+            if u.path in ("/api/combina", "/api/ytdlp", "/api/pausa", "/api/dev", "/api/ex", "/api/exstream", "/api/fav") and self._host_ok():
                 q = parse_qs(u.query)
+                if u.path.startswith("/api/ex") or u.path == "/api/fav":
+                    import wavefly_explorar as X
+                    g = lambda k, d="": (q.get(k) or [d])[0]
+                    try:
+                        if u.path == "/api/ex":
+                            if g("generos"):
+                                return self._json({"generos": X.generos()})
+                            return self._json(X.lista(w, g("g", "surpresa"), g("p", "0"), g("s", "0"), g("q")))
+                        if u.path == "/api/exstream":
+                            return self._json(X.stream(w, g("id"), g("v", "1") == "1", g("f") == "1"))
+                        if g("add"):
+                            itens = X.fav_mudar(w, add={"id": g("add"), "titulo": g("t"), "canal": g("c"), "dur": g("d", "0")})
+                        elif g("del"):
+                            itens = X.fav_mudar(w, remover=g("del").split(","))
+                        else:
+                            itens = X.favoritas(w)
+                        return self._json({"itens": itens})
+                    except Exception as ex:
+                        msg = "Este vídeo ao vivo não pode ser transmitido." if "AO_VIVO" in str(ex) else w.amigavel(str(ex))[:160]
+                        return self._json({"erro": msg, "itens": [], "mais": False}, 200)
                 if u.path == "/api/pausa":
                     if (q.get("v") or [""])[0] in ("0", "1"):
                         w.definir_pausa((q.get("v") or ["0"])[0] == "1")

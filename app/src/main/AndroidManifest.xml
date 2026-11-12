@@ -27,15 +27,55 @@
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- Ícones alternativos (teste): só um deste grupo fica ativo; o painel do desenvolvedor troca. -->
+        <activity-alias android:name=".Icone0" android:targetActivity=".MainActivity" android:enabled="true"
+            android:exported="true" android:icon="@mipmap/ic_launcher" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icone1" android:targetActivity=".MainActivity" android:enabled="false"
+            android:exported="true" android:icon="@mipmap/ic_launcher_1" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icone2" android:targetActivity=".MainActivity" android:enabled="false"
+            android:exported="true" android:icon="@mipmap/ic_launcher_2" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icone3" android:targetActivity=".MainActivity" android:enabled="false"
+            android:exported="true" android:icon="@mipmap/ic_launcher_3" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icone4" android:targetActivity=".MainActivity" android:enabled="false"
+            android:exported="true" android:icon="@mipmap/ic_launcher_4" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icone5" android:targetActivity=".MainActivity" android:enabled="false"
+            android:exported="true" android:icon="@mipmap/ic_launcher_5" android:label="WaveFly">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name="androidx.core.content.FileProvider"

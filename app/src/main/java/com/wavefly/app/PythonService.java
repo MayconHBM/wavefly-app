@@ -45,6 +45,9 @@ public class PythonService extends Service {
     static final String ACTION_FWD10 = "com.wavefly.app.FWD10";
     static final String ACTION_PAUSA_DL = "com.wavefly.app.PAUSA_DL";
     static final String ACTION_DISPENSADA = "com.wavefly.app.DISPENSADA";
+    static final String ACTION_FAV = "com.wavefly.app.FAV";
+    static volatile boolean pEx = false;       // o player atual é o da aba Explorar
+    static volatile boolean pFav = false;      // a faixa do Explorar está nas favoritas
     private static final String CHANNEL = "wavefly";
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
@@ -145,6 +148,12 @@ public class PythonService extends Service {
             MainActivity.comandoPlayer("stop");
             pAtivo = false;
             pTocando = false;
+            ultimaChave = "";
+            return START_STICKY;
+        }
+        if (ACTION_FAV.equals(act)) {
+            pFav = !pFav;
+            MainActivity.comandoPlayer("fav");
             ultimaChave = "";
             return START_STICKY;
         }
@@ -300,7 +309,7 @@ public class PythonService extends Service {
         }
 
         if (musica) buscarCapa(pCapa);
-        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
+        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) + "|" + pEx + pFav : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
@@ -364,12 +373,25 @@ public class PythonService extends Service {
                     pTocando ? Idioma.t(this, "Pausar", "Pause", "Pausar") : Idioma.t(this, "Tocar", "Play", "Reproducir"), 3));
             b.addAction(acao(ACTION_FWD10, R.drawable.ic_n_fwd10, "+10 s", 7));
             b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, Idioma.t(this, "Próxima", "Next", "Siguiente"), 4));
-            Notification.MediaStyle estilo = new Notification.MediaStyle();
+            Notification.DecoratedMediaCustomViewStyle estilo = new Notification.DecoratedMediaCustomViewStyle();
             synchronized (this) {
                 if (sessao != null) estilo.setMediaSession(sessao.getSessionToken());
             }
             estilo.setShowActionsInCompactView(1, 2, 3);
             b.setStyle(estilo);
+            android.widget.RemoteViews rv = new android.widget.RemoteViews(getPackageName(), R.layout.notif_player);
+            rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly" : pTitulo);
+            rv.setTextViewText(R.id.n_sub, baixando ? Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem : pSub);
+            rv.setOnClickPendingIntent(R.id.n_x, PendingIntent.getService(this, 10,
+                    new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            rv.setViewVisibility(R.id.n_fav, pEx ? android.view.View.VISIBLE : android.view.View.GONE);
+            rv.setImageViewResource(R.id.n_fav, pFav ? R.drawable.ic_n_heartf : R.drawable.ic_n_heart);
+            rv.setOnClickPendingIntent(R.id.n_fav, PendingIntent.getService(this, 11,
+                    new Intent(this, PythonService.class).setAction(ACTION_FAV),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            b.setCustomContentView(rv);
+            b.setCustomBigContentView(rv);
         } else {
             b.setContentTitle(dlPausado ? Idioma.t(this, "Downloads pausados", "Downloads paused", "Descargas en pausa")
                     : Idioma.t(this, "Baixando", "Downloading", "Descargando"));

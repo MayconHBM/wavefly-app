@@ -270,6 +270,41 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pAtivo = ativo == 1;
         }
 
+        /** Ícones alternativos do app (teste): 0 = padrão, 1..5 = outros. */
+        @JavascriptInterface
+        public void setIcone(int n) {
+            try {
+                android.content.pm.PackageManager pm = getPackageManager();
+                for (int i = 0; i <= 5; i++) {
+                    pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), "com.wavefly.app.Icone" + i),
+                            i == n ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                                    : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            android.content.pm.PackageManager.DONT_KILL_APP);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        @JavascriptInterface
+        public int icone() {
+            try {
+                android.content.pm.PackageManager pm = getPackageManager();
+                for (int i = 1; i <= 5; i++) {
+                    if (pm.getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), "com.wavefly.app.Icone" + i))
+                            == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return i;
+                }
+            } catch (Throwable ignored) {
+            }
+            return 0;
+        }
+
+        /** A aba Explorar avisa que é ela que está tocando e se a faixa é favorita (botão ♥ da notificação). */
+        @JavascriptInterface
+        public void playerX(int explorar, int fav) {
+            PythonService.pEx = explorar == 1;
+            PythonService.pFav = fav == 1;
+        }
+
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */
         @JavascriptInterface
         public void stream(final String id) {
