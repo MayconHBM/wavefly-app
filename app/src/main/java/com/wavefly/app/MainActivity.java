@@ -298,13 +298,6 @@ public class MainActivity extends AppCompatActivity {
             return 0;
         }
 
-        /** A aba Explorar avisa que é ela que está tocando e se a faixa é favorita (botão ♥ da notificação). */
-        @JavascriptInterface
-        public void playerX(int explorar, int fav) {
-            PythonService.pEx = explorar == 1;
-            PythonService.pFav = fav == 1;
-        }
-
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */
         @JavascriptInterface
         public void stream(final String id) {

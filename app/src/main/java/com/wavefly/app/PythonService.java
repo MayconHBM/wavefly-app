@@ -45,9 +45,7 @@ public class PythonService extends Service {
     static final String ACTION_FWD10 = "com.wavefly.app.FWD10";
     static final String ACTION_PAUSA_DL = "com.wavefly.app.PAUSA_DL";
     static final String ACTION_DISPENSADA = "com.wavefly.app.DISPENSADA";
-    static final String ACTION_FAV = "com.wavefly.app.FAV";
-    static volatile boolean pEx = false;       // o player atual é o da aba Explorar
-    static volatile boolean pFav = false;      // a faixa do Explorar está nas favoritas
+
     private static final String CHANNEL = "wavefly";
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
@@ -132,14 +130,11 @@ public class PythonService extends Service {
             return START_STICKY;
         }
         if (ACTION_BACK10.equals(act) || ACTION_FWD10.equals(act)) {
-            long cur = pPosMs;
-            if (pTocando && pEm != 0) cur += SystemClock.elapsedRealtime() - pEm;
-            long novo = cur + (ACTION_FWD10.equals(act) ? 10000 : -10000);
-            if (novo < 0) novo = 0;
-            if (pDurMs > 0 && novo > pDurMs) novo = pDurMs;
-            pPosMs = novo;
+            // A página faz a conta com a posição real do áudio (a nossa pode estar atrasada).
+            long novo = posAgora() + (ACTION_FWD10.equals(act) ? 10000 : -10000);
+            pPosMs = Math.max(0, pDurMs > 0 ? Math.min(novo, pDurMs) : novo);
             pEm = SystemClock.elapsedRealtime();
-            MainActivity.comandoPlayer("seek:" + novo);
+            MainActivity.comandoPlayer(ACTION_FWD10.equals(act) ? "rel:10" : "rel:-10");
             ultimaChave = "";
             return START_STICKY;
         }
@@ -148,12 +143,6 @@ public class PythonService extends Service {
             MainActivity.comandoPlayer("stop");
             pAtivo = false;
             pTocando = false;
-            ultimaChave = "";
-            return START_STICKY;
-        }
-        if (ACTION_FAV.equals(act)) {
-            pFav = !pFav;
-            MainActivity.comandoPlayer("fav");
             ultimaChave = "";
             return START_STICKY;
         }
@@ -309,7 +298,8 @@ public class PythonService extends Service {
         }
 
         if (musica) buscarCapa(pCapa);
-        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + pEm + "|" + (capaBmp != null && capaDe.equals(pCapa)) + "|" + pEx + pFav : "d")
+        // A posição entra na chave só em segundos: no máximo uma atualização por segundo (o Android descarta o excesso).
+        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
@@ -333,6 +323,19 @@ public class PythonService extends Service {
             }
         }
         ultimaChave = chave;
+    }
+
+    /** Posição atual da faixa (a última informada pela página + o tempo que passou, se estiver tocando). */
+    private long posAgora() {
+        long cur = pPosMs;
+        if (pTocando && pEm != 0) cur += SystemClock.elapsedRealtime() - pEm;
+        if (pDurMs > 0 && cur > pDurMs) cur = pDurMs;
+        return Math.max(0, cur);
+    }
+
+    private static String fmt(long ms) {
+        long s = ms / 1000;
+        return (s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
     }
 
     private Notification montar(boolean baixando, boolean musica, int feitos, int total, boolean fixa) {
@@ -381,14 +384,27 @@ public class PythonService extends Service {
             b.setStyle(estilo);
             android.widget.RemoteViews rv = new android.widget.RemoteViews(getPackageName(), R.layout.notif_player);
             rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly" : pTitulo);
-            rv.setTextViewText(R.id.n_sub, baixando ? Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem : pSub);
+            long pos = posAgora();
+            String sub = pSub;
+            if (pDurMs > 0) sub = (sub.isEmpty() ? "" : sub + " · ") + fmt(pos) + " / " + fmt(pDurMs);
+            rv.setTextViewText(R.id.n_sub, sub);
+            if (pDurMs > 0) {
+                rv.setViewVisibility(R.id.n_prog, android.view.View.VISIBLE);
+                rv.setProgressBar(R.id.n_prog, (int) (pDurMs / 1000), (int) (pos / 1000), false);
+            } else {
+                rv.setViewVisibility(R.id.n_prog, android.view.View.GONE);
+            }
+            if (baixando && total > 0) {
+                rv.setViewVisibility(R.id.n_dl, android.view.View.VISIBLE);
+                rv.setProgressBar(R.id.n_dl, total, Math.min(feitos, total), false);
+                rv.setTextViewText(R.id.n_dltxt, Idioma.t(this, "Baixando ", "Downloading ", "Descargando ") + contagem);
+                rv.setViewVisibility(R.id.n_dltxt, android.view.View.VISIBLE);
+            } else {
+                rv.setViewVisibility(R.id.n_dl, android.view.View.GONE);
+                rv.setViewVisibility(R.id.n_dltxt, android.view.View.GONE);
+            }
             rv.setOnClickPendingIntent(R.id.n_x, PendingIntent.getService(this, 10,
                     new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
-                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-            rv.setViewVisibility(R.id.n_fav, pEx ? android.view.View.VISIBLE : android.view.View.GONE);
-            rv.setImageViewResource(R.id.n_fav, pFav ? R.drawable.ic_n_heartf : R.drawable.ic_n_heart);
-            rv.setOnClickPendingIntent(R.id.n_fav, PendingIntent.getService(this, 11,
-                    new Intent(this, PythonService.class).setAction(ACTION_FAV),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             b.setCustomContentView(rv);
             b.setCustomBigContentView(rv);

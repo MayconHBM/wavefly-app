@@ -261,7 +261,19 @@ def expandir_playlist(url):
     return titulo, links
 
 
-def obter_info(url):
+def obter_info(url, leve=False):
+    if leve:
+        # leitura leve: um cliente só, sem desafio de JavaScript (mais rápido). Se não der, cai no jeito normal.
+        try:
+            op = dict(OPTS, extractor_args={"youtube": {"player_client": ["android_vr"]}})
+            with yt_dlp.YoutubeDL(op) as ydl:
+                info = ydl.extract_info(url, download=False)
+                base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
+            if any(f.get("url") and f.get("acodec") not in (None, "none") for f in (info.get("formats") or [])):
+                return info, info.get("title", "sem título"), base
+        except Exception:
+            pass
+        dev_log("info", "leitura leve não serviu; usando a normal")
     with yt_dlp.YoutubeDL(OPTS) as ydl:
         info = ydl.extract_info(url, download=False)
         base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
@@ -382,34 +394,51 @@ def eh_ao_vivo(vid):
         return False
 
 
+LIVE_CACHE = {}
+
+
+def ao_vivo(vid):
+    if not re.fullmatch(r"[\w-]{11}", vid or ""):
+        return False
+    if vid in LIVE_CACHE:
+        return LIVE_CACHE[vid]
+    r = eh_ao_vivo(vid)
+    if len(LIVE_CACHE) > 3000:
+        LIVE_CACHE.clear()
+    LIVE_CACHE[vid] = r
+    return r
+
+
 def titulo_rapido(vid, checar_live=False):
+    """Título e canal. Rápido (oEmbed). 'indisp' = o YouTube diz que não existe/é privado; 'tmp' = falha passageira."""
     if not re.fullmatch(r"[\w-]{11}", vid or ""):
         raise ValueError("Vídeo inválido")
-    if vid in TIT_CACHE and (not checar_live or "live" in TIT_CACHE[vid]):
+    if vid in TIT_CACHE:
         return TIT_CACHE[vid]
     url = "https://www.youtube.com/watch?v=" + vid
     t = None
+    indisp = False
     try:
         u = "https://www.youtube.com/oembed?format=json&url=" + quote_plus(url)
-        with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=8) as r:
+        with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=6) as r:
             d = json.load(r)
         if d.get("title"):
             t = {"titulo": d["title"], "canal": d.get("author_name") or ""}
+    except urllib.error.HTTPError as ex:
+        indisp = ex.code in (400, 401, 403, 404)
     except Exception:
         pass
-    if not t:
+    if not t and not indisp:
         try:
-            with yt_dlp.YoutubeDL(dict(OPTS, skip_download=True, socket_timeout=15)) as ydl:
+            with yt_dlp.YoutubeDL(dict(OPTS, skip_download=True, socket_timeout=12)) as ydl:
                 info = ydl.extract_info(url, download=False)
             if info.get("duration"):
                 DURS[vid] = info["duration"]
             t = {"titulo": info.get("title") or "", "canal": info.get("channel") or info.get("uploader") or ""}
         except Exception:
-            return {"titulo": "", "canal": ""}
-    if not t["titulo"]:
-        return t
-    if checar_live:
-        t["live"] = eh_ao_vivo(vid)
+            return {"titulo": "", "canal": "", "tmp": 1}
+    if not t or not t.get("titulo"):
+        return {"titulo": "", "canal": "", "indisp": 1} if indisp else {"titulo": "", "canal": "", "tmp": 1}
     if len(TIT_CACHE) > 3000:
         TIT_CACHE.clear()
     TIT_CACHE[vid] = t
@@ -1003,10 +1032,37 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "ult_rede": 0.0, "ok": 0, "falha": 0}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 3, "conv_n": 3, "leve": True, "ult_rede": 0.0, "ok": 0, "falha": 0}
 DEV_LOCK = threading.Lock()
-REDE = threading.Semaphore(3)   # modo rápido: até 3 em rede ao mesmo tempo (no normal só há um trabalhador)
-CONV = threading.Semaphore(3)   # modo rápido: até 3 conversões ao mesmo tempo
+class Limite:
+    """Semáforo cujo limite pode mudar na hora (o painel do desenvolvedor ajusta)."""
+    def __init__(self, n):
+        self.n, self.u, self.c = n, 0, threading.Condition()
+
+    def acquire(self, timeout=None):
+        fim = None if timeout is None else time.time() + timeout
+        with self.c:
+            while self.u >= self.n:
+                resto = None if fim is None else fim - time.time()
+                if resto is not None and resto <= 0:
+                    return False
+                self.c.wait(resto if resto is not None else 0.5)
+            self.u += 1
+            return True
+
+    def release(self):
+        with self.c:
+            self.u = max(0, self.u - 1)
+            self.c.notify_all()
+
+    def set(self, n):
+        with self.c:
+            self.n = max(1, int(n))
+            self.c.notify_all()
+
+
+REDE = Limite(3)   # modo rápido: quantos em rede ao mesmo tempo (no normal só há um trabalhador)
+CONV = Limite(3)   # modo rápido: quantas conversões ao mesmo tempo
 
 
 def dev_log(tipo, msg):
@@ -1034,6 +1090,22 @@ def definir_pausa(v):
         if parou:
             matar_ffmpeg()
     aviso("⏸️ Downloads pausados. O que estava baixando volta para o começo da fila." if PAUSA["on"] else "")
+
+
+def definir_ajustes(rede=None, conv=None, leve=None):
+    if rede is not None:
+        DEV["rede_n"] = max(2, min(6, int(rede)))
+        REDE.set(DEV["rede_n"])
+    if conv is not None:
+        DEV["conv_n"] = max(2, min(6, int(conv)))
+        CONV.set(DEV["conv_n"])
+    if leve is not None:
+        DEV["leve"] = bool(leve)
+    dev_log("ajuste", "rede=%d conversões=%d leitura leve=%s" % (DEV["rede_n"], DEV["conv_n"], "sim" if DEV["leve"] else "não"))
+
+
+def trabalhadores_ativos():
+    return max(DEV["rede_n"], DEV["conv_n"])
 
 
 def definir_rapido(v):
@@ -1094,7 +1166,8 @@ def dev_estado():
     return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": media, "n": n,
             "por_hora": (round((n - 1) / (med[-1]["fim"] - med[0]["fim"]) * 3600) if n >= 3 and med[-1]["fim"] > med[0]["fim"]
                          else (round(3600 / media["total"]) if media["total"] else 0)),
-            "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log}
+            "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
+            "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "leve": DEV["leve"]}
 
 
 def processar(it):
@@ -1119,7 +1192,8 @@ def _processar(it):
     titulo_preview = it.get("titulo") or ""
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     try:
-        info, titulo, base = obter_info(it["url"])
+        it["_leve"] = bool(it["_rap"] and DEV["leve"] and not it.get("_leve_off"))
+        info, titulo, base = obter_info(it["url"], it["_leve"])
     except Exception:
         info, titulo, base = {}, titulo_preview, ""
     # se o titulo novo vier vazio / generico, mantém o do preview
@@ -1156,7 +1230,13 @@ def _processar(it):
     it["pct"] = 0
     t0 = time.monotonic()
     it["_t"]["info"] = t0 - t_ini - it["_t"]["espera"]
-    baixar(it, info, nome, it["destino"])
+    try:
+        baixar(it, info, nome, it["destino"])
+    except Exception:
+        if it.get("_leve"):
+            it["_leve_off"] = True      # se falhou com a leitura leve, as próximas tentativas usam a normal
+            dev_log("info", "falha com leitura leve; próximas tentativas usam a normal")
+        raise
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
     t1 = time.monotonic()
@@ -1220,7 +1300,7 @@ def trabalhador(idx=0):
     feitos = 0
     while True:
         try:
-            if idx >= 1 and not rapido_ligado():
+            if idx >= 1 and (not rapido_ligado() or idx >= trabalhadores_ativos()):
                 time.sleep(1)
                 continue
             if PAUSA["on"]:
@@ -1680,6 +1760,8 @@ class H(BaseHTTPRequestHandler):
                     return self._json({"erro": "arquivo não encontrado"}, 404)
                 nome = re.sub(r"[^\w .-]", "", (q.get("n") or ["WaveFly.zip"])[0])[:60] or "WaveFly.zip"
                 return self._audio("", anexo=True, abs_path=os.path.join(ZIP_DIR, t + ".zip"), nome=nome)
+            if p == "/api/aovivo":
+                return self._json({"live": ao_vivo((q.get("id") or [""])[0])})
             if p == "/api/titulo":
                 return self._json(titulo_rapido((q.get("id") or [""])[0], bool((q.get("live") or [""])[0])))
             if p == "/api/existe":
@@ -1732,17 +1814,6 @@ class H(BaseHTTPRequestHandler):
                 pass
 
     def _capa(self, rel):
-        if rel.startswith("yt:") and re.fullmatch(r"[\w-]{11}", rel[3:]):
-            dados = _baixar_thumb(rel[3:])
-            if dados:
-                self.send_response(200)
-                self.send_header("Content-Type", "image/jpeg")
-                self.send_header("Content-Length", str(len(dados)))
-                self.send_header("Cache-Control", "max-age=86400")
-                self.end_headers()
-                self.wfile.write(dados)
-                return
-            return self._json({"erro": "sem capa"}, 404)
         pth = caminho_seguro(rel)
         img = capa_de(pth) if pth and os.path.isfile(pth) else None
         if not img:
@@ -1822,8 +1893,8 @@ header{display:flex;align-items:center;gap:12px;padding:calc(16px + env(safe-are
 .sp1{flex:1}
 .ib{width:38px;height:38px;padding:0;border-radius:12px;display:grid;place-items:center;background:var(--cd);border:1px solid var(--ln);color:var(--fg)}
 .tabs{display:flex;gap:4px;background:var(--sf);border-radius:14px;padding:3px;margin-bottom:4px;border:1px solid var(--ln)}
-.tabs a{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;padding:9px 1px;border-radius:11px;color:var(--mut);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-.tabs a svg.i{width:14px;height:14px;flex:none}
+.tabs a{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 4px;border-radius:11px;color:var(--mut);font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tabs a svg.i{width:16px;height:16px}
 .tabs a.on{background:var(--cd);color:var(--at);box-shadow:var(--sh)}
 .cb{display:inline-block;font-size:11px;background:var(--ac);color:#fff;padding:0 6px;border-radius:99px;font-weight:700}
 .v{animation:fd .2s ease}
@@ -2168,7 +2239,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <div class="w">
 <header><span class="mk"><svg viewBox="0 0 80 52" aria-hidden="true"><rect x="1.5" y="1.5" width="77" height="49" rx="6" fill="#f1dfb8" stroke="#4a2a17" stroke-width="2.6"/><circle cx="6.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="6.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><rect x="11" y="5.5" width="58" height="21" rx="2.5" fill="#e8873a" stroke="#4a2a17" stroke-width="1.4"/><path d="M11 8a2.5 2.5 0 0 1 2.5-2.5h53A2.5 2.5 0 0 1 69 8v2.5H11z" fill="#c8581f"/><rect x="14" y="13" width="52" height="10" rx="1.5" fill="#f3e3c3" stroke="#4a2a17" stroke-width=".6"/><path d="M16.5 16.5h27M16.5 20h17" stroke="#4a2a17" stroke-width="1" stroke-linecap="round" opacity=".7"/><circle cx="58" cy="18" r="3.6" fill="#e8873a" stroke="#4a2a17" stroke-width=".9"/><circle cx="58" cy="18" r="1.2" fill="#4a2a17"/><rect x="17" y="29" width="46" height="14" rx="7" fill="#2a1a10" stroke="#4a2a17" stroke-width="1.4"/><path d="M29 42.4H51" stroke="#6b4228" stroke-width="1.2"/><circle cx="29" cy="36" r="6.4" fill="#6b4228"/><circle cx="51" cy="36" r="5" fill="#6b4228"/><g class="mkr" style="transform-origin:29px 36px"><circle cx="29" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M29 31.9v8.2M25.5 34l7 4M32.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><g class="mkr" style="transform-origin:51px 36px"><circle cx="51" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M51 31.9v8.2M47.5 34l7 4M54.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><path d="M22 45.5 25 49.2H55L58 45.5z" fill="#d9bf8c" stroke="#4a2a17" stroke-width="1.1" stroke-linejoin="round"/><circle cx="32" cy="47.3" r="1.1" fill="#2a1a10"/><circle cx="48" cy="47.3" r="1.1" fill="#2a1a10"/><path d="M5 12v26" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity=".35"/></svg></span><b class="wm">Wave<i>Fly</i></b><span class="sp1"></span>
 <button class="ib" id="bset" aria-label="Ajustes" data-i="gear"></button></header>
-<nav class="tabs"><a data-go="baixar" class="on"><span data-i="down"></span>Baixar</a><a data-go="nome"><span data-i="search"></span>Buscar<span class="cb" id="nb" hidden></span></a><a data-go="explorar"><span data-i="explore"></span>Explorar</a><a data-go="musicas"><span data-i="folder"></span>Biblioteca</a></nav>
+<nav class="tabs"><a data-go="baixar" class="on"><span data-i="down"></span>Baixar</a><a data-go="nome"><span data-i="search"></span>Buscar<span class="cb" id="nb" hidden></span></a><a data-go="musicas"><span data-i="folder"></span>Biblioteca</a></nav>
 
 <section class="v" id="v-baixar">
   <h1>Baixar</h1>
@@ -2202,8 +2273,6 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div id="tray" hidden></div>
   <div id="res" style="margin-top:10px"></div>
 </section>
-
-<section class="v" id="v-explorar" hidden></section>
 
 <section class="v" id="v-musicas" hidden>
   <div class="row" style="margin-top:14px">
@@ -2261,7 +2330,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 const APPN='{{APP}}';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const I={explore:'<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor"/>',
+const I={
  down:'<path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"/>',
  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
  note:'<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
@@ -2285,7 +2354,7 @@ const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;hei
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
 const WAVE='<svg viewBox="0 0 76 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="70" height="42" rx="6"/><rect x="11" y="9" width="54" height="14" rx="2"/><rect x="20" y="28" width="36" height="11" rx="5.5"/><circle cx="29" cy="33.5" r="2.6"/><circle cx="47" cy="33.5" r="2.6"/></svg>';
 const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}" alt="" onerror="this.style.display='none'"></span>`;
-let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,READY=[],LST=[],LR={dup:0,fora:0},PVN=3,PVT,QVN=5,ABAF='fila';
+let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,READY=[],LST=[],LR={dup:0,fora:0},PVN=5,PVT,QVN=5,ABAF='fila';
 async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'wavefly'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok||j.erro)throw new Error(j.erro||('Erro '+r.status));return j}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(TT);TT=setTimeout(()=>t.classList.remove('on'),Math.min(4500,1700+m.length*28))}
 function conf(msg,ok){return new Promise(r=>{$('#mi').hidden=true;$('#mt').innerHTML=msg;$('#my').textContent=ok||'Confirmar';$('#md').classList.add('on');const f=v=>{$('#md').classList.remove('on');r(v)};$('#my').onclick=()=>f(true);$('#mn').onclick=()=>f(false)})}
@@ -2301,7 +2370,7 @@ const plId=u=>{const m=(u||'').match(/[?&]list=([\w-]+)/);return m?m[1]:''};
 function segset(g,v){g=typeof g==='string'?$('#'+g):g;[...g.children].forEach(b=>b.classList.toggle('on',b.dataset.v==String(v)))}
 const estB=d=>{if(!d)return 0;const f=C.formato,k=f==='mp3'?192:f==='video'?(({360:700,720:1800,1080:3500})[C.res]||1800)+128:128;return d*k*125};
 
-function go(t){$$('.v').forEach(e=>e.hidden=e.id!=='v-'+t);$$('.tabs a').forEach(a=>a.classList.toggle('on',a.dataset.go===t));window.scrollTo(0,0);if(t==='musicas')loadLib();updbars()}
+function go(t){$$('.v').forEach(e=>e.hidden=e.id!=='v-'+t);$$('.tabs a').forEach(a=>a.classList.toggle('on',a.dataset.go===t));window.scrollTo(0,0);if(t==='musicas')loadLib();JA.clear();JAK.clear();if(LST.length)cnt();updbars()}
 $$('.tabs a').forEach(a=>a.onclick=()=>go(a.dataset.go));
 
 const abrirAj=()=>$('#sheet').classList.add('on'),fecharAj=()=>$('#sheet').classList.remove('on');
@@ -2361,12 +2430,17 @@ function plHTML(p){const pid=esc(p.pid);
 const TITS=new Map(),TQ=[];let TA=0;
 function fetchTit(id){if(TITS.has(id)||TQ.includes(id))return;TQ.push(id);pumpT()}
 let RPVT=0;function refazer(){clearTimeout(RPVT);RPVT=setTimeout(()=>{rpv();ccount()},120)}
-function pumpT(){while(TA<3&&TQ.length){const id=TQ.shift();TA++;api('/api/titulo?id='+encodeURIComponent(id)+(LST.length<=5?'&live=1':'')).then(d=>TITS.set(id,(d.titulo||d.live)?d:{titulo:'',canal:'',erro:true})).catch(()=>TITS.set(id,{titulo:'',canal:'',erro:true})).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
-const titTxt=(id,d)=>d.titulo||(d.erro?'Vídeo '+id:'Carregando...');
+const TRY={},LQ=[];let LA=0;
+function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer()}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
+function pumpT(){while(TA<4&&TQ.length){const id=TQ.shift();TA++;const falhou=()=>{TRY[id]=(TRY[id]||0)+1;if(TRY[id]<=3)setTimeout(()=>fetchTit(id),2000*TRY[id]);else TITS.set(id,{titulo:'',canal:'',tmp:true})};
+ api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=8){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
+const titTxt=(id,d)=>d.titulo||((d.erro||d.tmp)?'Vídeo '+id:'Carregando...');
 function updTit(id){const d=TITS.get(id)||{};$$(`[data-tid="${id}"]`).forEach(e=>e.textContent=titTxt(id,d));$$(`[data-cid="${id}"]`).forEach(e=>e.textContent=d.canal||(d.erro?'Título indisponível':''))}
 const indisp=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).erro&&!TITS.get(x.id).titulo);
 const aoVivo=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).live);
-function tirarLink(url){const ta=$('#ta');ta.value=ta.value.split('\n').filter(l=>!l.includes(url)&&!(url.match(/[\w-]{11}$/)&&l.includes(url.match(/[\w-]{11}$/)[0]))).join('\n');PVN=3;cnt()}
+function tirarLink(url){const ta=$('#ta'),id=vidOf(url);
+ ta.value=normLinks(ta.value).replace(LRE,m=>{const l=m.replace(/[.,;)>\]'"]+$/,'');return(l===url||(id&&vidOf(l)===id))?'':m}).replace(/[ \t]+\n/g,'\n').replace(/^[ \t]+|[ \t]+$/gm,'').replace(/\n{2,}/g,'\n').replace(/ {2,}/g,' ').trim();
+ PVN=5;cnt()}
 function rpv(){const b=$('#pv');if(!LST.length){b.hidden=true;b.innerHTML='';return}
  const pls=LST.filter(x=>x.pl),sing=LST.filter(x=>!x.pl&&!indisp(x));pls.forEach(carregaPL);
  const vis=sing.slice(0,PVN),rest=sing.length-vis.length;b.hidden=false;
@@ -2376,12 +2450,12 @@ function rpv(){const b=$('#pv');if(!LST.length){b.hidden=true;b.innerHTML='';ret
   const l2=lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
   const tt=x.id?`<div class="tt" data-tid="${esc(x.id)}">${esc(titTxt(x.id,d))}</div>${l2}`:`<div class="tt">Link do YouTube</div><div class="sm mut tt">${esc(short(x.url))}</div>`;
   return `<div class="pr${j||lv?' off':''}" ${j||lv?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div><button class="pvx" data-rm="${esc(x.url)}" aria-label="Remover" data-i="x">×</button></div>`}).join('')+
-  (rest>0?`<button class="t" id="pvmais">Ver mais (${Math.min(7,rest)})</button>`:'')+(PVN>3&&sing.length>3?'<button class="t" id="pvmenos">Recolher</button>':'');
+  (rest>0?`<button class="t" id="pvmais">Ver mais (${Math.min(7,rest)})</button>`:'')+(PVN>5&&sing.length>5?'<button class="t" id="pvmenos">Recolher</button>':'');
  vis.forEach(x=>{if(x.id)fetchTit(x.id)})}
 $('#pv').onclick=e=>{const t=e.target;
  const rm=t.closest('[data-rm]');if(rm){return tirarLink(rm.dataset.rm)}
- if(t.id==='pvmais'){PVN=(PVN===3)?10:(PVN+10);return rpv()}
- if(t.id==='pvmenos'){PVN=3;return rpv()}
+ if(t.id==='pvmais'){PVN=(PVN===5)?10:(PVN+10);return rpv()}
+ if(t.id==='pvmenos'){PVN=5;return rpv()}
  const a=t.closest('[data-pa]');if(!a)return;const p=PLP[a.dataset.pid];if(!p)return;const k=a.dataset.pa;
  if(k==='open')p.open=!p.open;else if(k==='all')p.sel=new Set(p.itens.filter(i=>!i.ja).map(i=>i.id));else if(k==='none')p.sel.clear();else if(k==='more')p.vis+=10;
  rpv();ccount()};
@@ -2406,8 +2480,8 @@ function cnt(){
  LASTDUP=r.dup;
  
  jaIds(LST.filter(x=>!x.pl).map(x=>x.id));ccount();clearTimeout(PVT);PVT=setTimeout(rpv,250)}
-$('#ta').oninput=()=>{PVN=3;cnt()};
-$('#bclr').onclick=()=>{$('#ta').value='';PVN=3;cnt()};
+$('#ta').oninput=()=>{PVN=5;cnt()};
+$('#bclr').onclick=()=>{$('#ta').value='';PVN=5;cnt()};
 $('#bpaste').onclick=async()=>{let t='';try{t=(window.WF&&WF.paste)?WF.paste():await navigator.clipboard.readText()}catch(e){}t=(t||'').trim();if(t){$('#ta').value+=($('#ta').value?'\n':'')+t;cnt()}else toast('Nenhum link copiado.')};
 let WFLAST='';window.wfClip=()=>{try{if(!window.WF||!WF.paste)return;const ta=$('#ta');if(!ta||ta.value.trim())return;const t=(WF.paste()||'').trim();if(/^https?:\/\/\S+$/i.test(t)&&t!==WFLAST){WFLAST=t;ta.value=t;cnt();toast('Link copiado colado')}}catch(e){}};
 $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
@@ -2422,7 +2496,7 @@ $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
  const keep=[],listas=[];r.lst.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&!p.erro&&p.itens.length){if(p.sel.size)listas.push({pid:p.pid,titulo:p.titulo,ids:p.itens.filter(i=>p.sel.has(i.id)).map(i=>i.id)})}else if(!(x.id&&JA.has(x.id))&&!indisp(x)&&!aoVivo(x))keep.push(x.url)});
  
  const b=$('#bgo');b.disabled=true;b.textContent='Processando links...';
- try{const d=await api('/api/add',{texto:keep.join('\n'),listas,titulos:window.__TIT||{}});$('#ta').value='';PVN=3;let m=d.add?`${d.add} adicionado${d.add>1?'s':''}`:`Nada novo`;
+ try{const d=await api('/api/add',{texto:keep.join('\n'),listas,titulos:window.__TIT||{}});$('#ta').value='';PVN=5;let m=d.add?`${d.add} adicionado${d.add>1?'s':''}`:`Nada novo`;
   const ign=(d.rep||0)+(d.ja||0);
   if(ign)m+=` · ${ign} ignorado${ign>1?'s':''}`;
   else if(d.ja)m+=` · ${d.ja} já existente${d.ja>1?'s':''}`;
@@ -2599,7 +2673,7 @@ function stopPlayer(){
 function stopIf(r){if(CUR&&r.includes(CUR))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
-$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagados');loadLib()}catch(e){toast(e.message)}}};
+$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagados');JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
 
 $('#bvar').onclick=async()=>{const b=$('#bvar');b.disabled=true;b.textContent='Procurando...';
  try{RG=(await api('/api/repetidas',{})).grupos;drep();if(!RG.length)$('#rep').innerHTML=`<div class="empty">${WAVE}<p>Nenhuma repetida encontrada.</p></div>`}catch(e){toast(e.message)}b.disabled=false;b.textContent='Procurar repetidas'};
@@ -2983,7 +3057,7 @@ def main():
     carregar_index()
     restaurar_fila()
     threading.Thread(target=trabalhador, daemon=True).start()
-    for _k in (1, 2, 3):
+    for _k in (1, 2, 3, 4, 5):
         threading.Thread(target=trabalhador, args=(_k,), daemon=True).start()
     if SERVIDOR:
         threading.Thread(target=faxina, daemon=True).start()
