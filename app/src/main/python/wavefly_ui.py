@@ -165,7 +165,7 @@ DICT = [
     ("Pausar tudo", "Pause all", "Pausar todo"), ("Continuar", "Resume", "Continuar"),
     ("Downloads pausados.", "Downloads paused.", "Descargas en pausa."), ("Registro copiado", "Log copied", "Registro copiado"),
     ("Informações", "Info", "Información"), ("Conversão", "Conversion", "Conversión"), ("Espera", "Wait", "Espera"),
-    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Amostra", "Sample", "Muestra"),
+    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Link inválido · não dá para baixar", "Invalid link · can't be downloaded", "Enlace no válido · no se puede descargar"), ("Vídeo inexistente ou indisponível · não dá para baixar", "Video doesn't exist or is unavailable · can't be downloaded", "El video no existe o no está disponible · no se puede descargar"), ("Relatório copiado", "Report copied", "Informe copiado"), ("Limpar o registro? Isso não pode ser desfeito.", "Clear the log? This can't be undone.", "¿Borrar el registro? No se puede deshacer."), ("Escreva uma mensagem antes de enviar", "Write a message before sending", "Escribe un mensaje antes de enviar"), ("Não achei um app de e-mail. Texto copiado: envie para contato.wavefly@gmail.com", "No email app found. Text copied: send it to contato.wavefly@gmail.com", "No encontré una app de correo. Texto copiado: envíalo a contato.wavefly@gmail.com"), ("Problemas ou sugestões?", "Problems or suggestions?", "¿Problemas o sugerencias?"), ("Escreva aqui o que aconteceu ou o que você gostaria de ver. Vamos olhar.", "Write here what happened or what you would like to see. We will take a look.", "Escribe aquí lo que pasó o lo que te gustaría ver. Lo revisaremos."), ("Incluir informações técnicas (versão, aparelho e últimos eventos)", "Include technical info (version, device and latest events)", "Incluir información técnica (versión, dispositivo y últimos eventos)"), ("Escreva aqui…", "Write here…", "Escribe aquí…"), ("Copiar tudo", "Copy all", "Copiar todo"), ("Enviar", "Send", "Enviar"), ("Mediana (total)", "Median (total)", "Mediana (total)"), ("Mediana (conversão)", "Median (conversion)", "Mediana (conversión)"), ("Amostra", "Sample", "Muestra"),
     ("Sem medidas ainda. Baixe algumas músicas.", "No measurements yet. Download a few songs.", "Aún sin mediciones. Descarga algunas canciones."),
     ("Falhas", "Failures", "Fallos"), ("Bateria", "Battery", "Batería"), ("Memória do app", "App memory", "Memoria de la app"),
     ("Rede", "Network", "Red"), ("Sem eventos.", "No events.", "Sin eventos."), ("Desenvolvedor", "Developer", "Desarrollador"),
@@ -231,6 +231,7 @@ html[lang="es"] body .tabs a{font-size:13px;letter-spacing:-.2px}
 .wfmodal label{display:flex;gap:10px;align-items:center;margin:14px 0 4px;font-size:14px}
 .wfmodal label input{width:20px;height:20px;flex:none}
 .wfmodal .wfok{display:block;margin:12px auto 0;min-width:60%}
+#md{z-index:100000!important}
 #wfdev{position:fixed;inset:0;z-index:99998;background:var(--bg);color:var(--fg);overflow-y:auto;padding:16px 16px 40px;-webkit-overflow-scrolling:touch}
 #wfdev h2{margin:0 0 4px;font-size:20px}
 #wfdev .wfbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
@@ -255,6 +256,8 @@ html[lang="es"] body .tabs a{font-size:13px;letter-spacing:-.2px}
 #wfdev .wfic span{display:block;width:54px;height:54px;border-radius:50%;overflow:hidden}
 #wfdev .wfic svg{width:100%;height:100%;display:block}
 #wfdev .wfic em{font-style:normal}
+#wfdev textarea.wffb{width:100%;min-height:110px;box-sizing:border-box;background:var(--sf);color:var(--fg);border:1px solid var(--ln);border-radius:12px;padding:10px;font:inherit;resize:none}
+#wfdev .wfchk{display:flex;gap:8px;align-items:center;margin:8px 0;color:var(--fg)}
 #wfdev .wfbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 #wfdev .wfbtns button{flex:1 1 auto}
 .wfpb{margin:0 2px}
@@ -383,7 +386,7 @@ var PAUSADO=false;
 
 /* ---------- Painel do desenvolvedor ---------- */
 var DEVT=null;
-function aplicaRapido(){try{var q='/api/dev?rede='+(wfget('dev_rede4')||4)+'&conv='+(wfget('dev_conv4')||4);fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
+function aplicaRapido(){try{var q='/api/dev?rede='+Math.min(5,wfget('dev_rede4')||4)+'&conv='+Math.min(5,wfget('dev_conv4')||4);fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
 aplicaRapido();
 function devAbrir(){
   if(document.getElementById('wfdev'))return;
@@ -393,22 +396,50 @@ function devAbrir(){
     '<div class="wfcx"><h3>Ajustes do modo rápido</h3>'+
     '<div class="wfrow"><span class="wft">Downloads ao mesmo tempo</span><span class="wfseg" id="wfsr"></span></div>'+
     '<div class="wfrow"><span class="wft">Conversões ao mesmo tempo</span><span class="wfseg" id="wfsc"></span></div>'+
-    '<p class="note">Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal.</p></div>'+
+    '<p class="note">Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal.</p><div class="note" id="wfdica"></div></div>'+
     '<div class="wfcx"><h3>Ícone do app (teste)</h3><div class="wficons" id="wficons"></div><p class="note">Escolha um. O ícone na tela inicial pode levar alguns segundos para trocar.</p></div>'+
     '<div class="wfcx"><h3>Tempo médio por música</h3><table id="wftb"></table></div>'+
     '<div class="wfcx"><h3>Contagem</h3><table id="wfct"></table></div>'+
     '<div class="wfcx"><h3>Aparelho</h3><table id="wfap"></table></div>'+
-    '<div class="wfcx"><h3>Registro</h3><div class="wflog" id="wflg"></div><div class="wfbtns"><button id="wfcp">Copiar registro</button><button id="wflp">Limpar</button></div></div></div>');
+    '<div class="wfcx"><h3>Problemas ou sugestões?</h3><p class="note">Escreva aqui o que aconteceu ou o que você gostaria de ver. Vamos olhar.</p><textarea class="wffb" id="wffb" placeholder="Escreva aqui…"></textarea><label class="wfchk"><input type="checkbox" id="wffi" checked> <span>Incluir informações técnicas (versão, aparelho e últimos eventos)</span></label><div class="wfbtns"><button id="wffc">Cancelar</button><button id="wffe">Enviar</button></div></div>'+
+    '<div class="wfcx"><h3>Registro</h3><div class="wflog" id="wflg"></div><div class="wfbtns"><button id="wfca">Copiar tudo</button><button id="wfcp">Copiar registro</button><button id="wflp">Limpar</button></div></div></div>');
   document.body.appendChild(d);
   var sw=d.querySelector('#wfrap');
   sw.onchange=function(){wfset('dev_rapido',sw.checked?'1':'');fetch('/api/dev?rapido='+(sw.checked?1:0)).then(function(){devAtualiza()})};
-  function seg(id,chave,pad){var el=d.querySelector(id),at=+(wfget(chave)||pad);
-    el.innerHTML=[2,3,4,5,6].map(function(n){return '<button type="button" data-n="'+n+'" class="'+(n===at?'on':'')+'">'+n+'</button>'}).join('');
+  function seg(id,chave,pad){var el=d.querySelector(id),at=Math.min(5,+(wfget(chave)||pad));
+    el.innerHTML=[2,3,4,5].map(function(n){return '<button type="button" data-n="'+n+'" class="'+(n===at?'on':'')+'">'+n+'</button>'}).join('');
     el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset(chave,b.dataset.n);
       [].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});fetch('/api/dev?'+(chave==='dev_rede4'?'rede':'conv')+'='+b.dataset.n).then(devAtualiza)}}
   seg('#wfsr','dev_rede4',4);seg('#wfsc','dev_conv4',4);
+  (function(){var DC={pt:[['2','Leve: menos calor e bateria, cerca de metade da velocidade. Bom com bateria baixa.'],['3','Equilibrado: bom ganho sem esquentar muito.'],['4','Recomendado: melhor equilíbrio. Nos testes, 30 músicas (inclusive faixas longas) em cerca de 13 min.'],['5','Máximo: só compensa com músicas curtas. Com faixas longas a conversão é limitada pelo processador, esquenta mais e o YouTube pode bloquear mais fácil.']],
+    en:[['2','Light: less heat and battery use, about half the speed. Good on low battery.'],['3','Balanced: good gain without much heat.'],['4','Recommended: best balance. In tests, 30 songs (including long tracks) in about 13 min.'],['5','Maximum: only worth it with short songs. With long tracks conversion is limited by the processor, it runs hotter and YouTube may block more easily.']],
+    es:[['2','Ligero: menos calor y batería, cerca de la mitad de velocidad. Bueno con batería baja.'],['3','Equilibrado: buena mejora sin calentar mucho.'],['4','Recomendado: mejor equilibrio. En pruebas, 30 canciones (con pistas largas) en unos 13 min.'],['5','Máximo: solo vale con canciones cortas. Con pistas largas la conversión la limita el procesador, calienta más y YouTube puede bloquear más fácil.']]};
+    var el=d.querySelector('#wfdica');el.innerHTML=(DC[LANG]||DC.pt).map(function(x){return '<div><b>'+x[0]+'</b> — '+x[1]+'</div>'}).join('')+'<div style="margin-top:6px">'+({pt:'Downloads: o limite é o YouTube (bloqueio). Conversões: o limite é o processador do celular.',en:'Downloads: the limit is YouTube (blocking). Conversions: the limit is the phone processor.',es:'Descargas: el límite es YouTube (bloqueo). Conversiones: el límite es el procesador del teléfono.'}[LANG]||'')+'</div>'})();
   d.querySelector('#wfdx').onclick=function(){clearInterval(DEVT);DEVT=null;d.remove()};
-  d.querySelector('#wflp').onclick=function(){fetch('/api/dev?limpar=1').then(function(){devAtualiza()})};
+  d.querySelector('#wflp').onclick=function(){conf(T('Limpar o registro? Isso não pode ser desfeito.'),T('Limpar')).then(function(ok){if(ok)fetch('/api/dev?limpar=1').then(function(){devAtualiza()})})};
+  function copia(t,msg){try{if(W&&W.copiar){W.copiar(t);toast(T(msg));return}}catch(e){}
+    try{var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast(T(msg))}catch(e){}}
+  function relatorio(comLog){return fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
+    var v='',ap='';try{if(W&&W.versaoApp)v=W.versaoApp()}catch(e){}
+    try{if(W&&W.info){var i=JSON.parse(W.info());ap='Bateria '+i.bat+'%'+(i.carregando?' (carregando)':'')+' · Memória do app '+i.memMb+' MB · Rede '+i.rede}}catch(e){}
+    var m=j.medias||{},md=j.medianas||{};
+    var L=['WaveFly '+v,'Aparelho: '+(navigator.userAgent||''),ap,'Idioma: '+LANG,'',
+      'Modo: '+(j.freio?'freio ativo':j.rapido?'rápido':'normal')+' · downloads '+j.rede_n+' · conversões '+j.conv_n,
+      'Concluídas '+j.ok+' · Falhas '+j.falha+' · Na fila '+((j.cont||{}).fila||0)+' · Baixando '+((j.cont||{}).baixando||0),
+      'Médias ('+j.n+' músicas): info '+m.info+'s · download '+m.dl+'s · conversão '+m.conv+'s · espera '+m.espera+'s · total '+m.total+'s · '+j.por_hora+'/h',
+      'Medianas: total '+md.total+'s · conversão '+md.conv+'s'];
+    [['Normal',j.normal],['Rápido',j.veloz]].forEach(function(x){var r=x[1];if(r&&r.n)L.push('Lote '+x[0]+': '+r.n+' músicas · '+r.medias.total+'s · '+r.por_hora+'/h')});
+    if(comLog!==false){L.push('','Registro:');L=L.concat((j.log||[]).slice(-40).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}))}
+    return L.join('\n')})}
+  d.querySelector('#wfca').onclick=function(){relatorio(true).then(function(t){copia(t,'Relatório copiado')})};
+  d.querySelector('#wffc').onclick=function(){d.querySelector('#wffb').value=''};
+  d.querySelector('#wffe').onclick=function(){var txt=(d.querySelector('#wffb').value||'').trim();if(!txt){toast(T('Escreva uma mensagem antes de enviar'));return}
+    var com=d.querySelector('#wffi').checked;
+    (com?relatorio(true):Promise.resolve('')).then(function(info){
+      var corpo=txt+(info?'\n\n--- Informações técnicas ---\n'+info:'');
+      var para='contato.wavefly@gmail.com',ass='WaveFly - Feedback',ok=false;
+      try{if(W&&W.email)ok=W.email(para,ass,corpo)}catch(e){}
+      if(!ok){copia('Para: '+para+'\nAssunto: '+ass+'\n\n'+corpo,'Não achei um app de e-mail. Texto copiado: envie para contato.wavefly@gmail.com')}})};
   d.querySelector('#wfcp').onclick=function(){var t=d.querySelector('#wflg').dataset.txt||'';
     try{if(W&&W.copiar){W.copiar(t);toast(T('Registro copiado'));return}}catch(e){}
     try{var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast(T('Registro copiado'))}catch(e){}};
@@ -430,7 +461,7 @@ function devAtualiza(){
     var modo=j.freio?{pt:'Freio ativo: voltou ao ritmo normal por causa de um bloqueio.',en:'Brake on: back to normal speed because of a block.',es:'Freno activo: volvió al ritmo normal por un bloqueo.'}[LANG]:j.rapido?{pt:'Modo rápido em uso.',en:'Fast mode in use.',es:'Modo rápido en uso.'}[LANG]:{pt:'Modo normal.',en:'Normal mode.',es:'Modo normal.'}[LANG];
     var mm=d.querySelector('#wfmodo');mm.textContent=modo+(j.pausado?(' '+T('Downloads pausados.')):'');
     var m=j.medias||{};
-    d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n)+cmp(j):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
+    d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Mediana (total)'),(j.medianas||{}).total+' s')+lin(T('Mediana (conversão)'),(j.medianas||{}).conv+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n)+cmp(j):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
     var c=j.cont||{};
     d.querySelector('#wfct').innerHTML=lin(T('Concluídas'),j.ok)+lin(T('Falhas'),j.falha)+lin(T('Na fila'),c.fila||0)+lin('Baixando',c.baixando||0)+lin(T('Repetidas'),c.duplicada||0);
     var lg=(j.log||[]).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}).join('\n');

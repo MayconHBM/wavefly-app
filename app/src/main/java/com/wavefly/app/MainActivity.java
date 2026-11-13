@@ -364,6 +364,26 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @JavascriptInterface
+        public boolean email(final String para, final String assunto, final String corpo) {
+            try {
+                final Intent i = new Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"));
+                i.putExtra(Intent.EXTRA_EMAIL, new String[]{para});
+                i.putExtra(Intent.EXTRA_SUBJECT, assunto);
+                i.putExtra(Intent.EXTRA_TEXT, corpo);
+                if (i.resolveActivity(getPackageManager()) == null) return false;
+                runOnUiThread(() -> {
+                    try {
+                        startActivity(i);
+                    } catch (Throwable ignored) {
+                    }
+                });
+                return true;
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
         public void copiar(final String texto) {
             runOnUiThread(() -> {
                 try {

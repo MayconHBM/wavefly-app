@@ -942,6 +942,8 @@ def baixar(it, info, nome, destino):
         elif d["status"] == "finished":
             it.setdefault("_tf", time.monotonic())
             it["pct"], it["vel"] = 100, ("convertendo…" if it["fmt"] == "mp3" else "juntando…" if it["fmt"] == "video" else "")
+            if it["fmt"] == "mp3":
+                vigiar_conversao(it, destino, nome)
             if it.get("_rap") and it.get("_rede"):
                 rede_soltar(it)     # a rede já está livre: o próximo download pode começar enquanto este converte
                 conv_pegar(it)
@@ -1002,6 +1004,55 @@ def baixar(it, info, nome, destino):
     limpar_capas()
     if it.get("_rap") and it["fmt"] == "mp3":
         etiquetar_mp3(os.path.join(destino, nome + ".mp3"), info)
+
+
+def matar_ffmpeg(nome):
+    """Encerra o ffmpeg que está convertendo este arquivo (o yt-dlp então acusa erro e o item entra na nova tentativa)."""
+    n = 0
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit() or int(pid) == os.getpid():
+                continue
+            try:
+                with open("/proc/%s/cmdline" % pid, "rb") as f:
+                    cmd = f.read().decode("utf-8", "ignore")
+            except OSError:
+                continue
+            if "ffmpeg" in cmd and nome in cmd:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                    n += 1
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return n
+
+
+def vigiar_conversao(it, destino, nome):
+    """Mostra há quanto tempo está convertendo e destrava a conversão que parou de gravar o arquivo."""
+    gen = it.get("_conv_gen", 0) + 1
+    it["_conv_gen"] = gen
+    it.pop("_conv_fim", None)
+    ini = time.monotonic()
+
+    def run():
+        while it.get("status") == "baixando" and it.get("_conv_gen") == gen and not it.get("_conv_fim") and not it.get("cancel"):
+            time.sleep(2)
+            dec = int(time.monotonic() - ini)
+            it["vel"] = "Convertendo… %d:%02d" % (dec // 60, dec % 60)
+            ult = 0.0
+            try:
+                for f in os.listdir(destino):
+                    if f.startswith(nome):
+                        ult = max(ult, os.path.getmtime(os.path.join(destino, f)))
+            except OSError:
+                pass
+            if ult and dec > 180 and time.time() - ult > 180:
+                dev_log("conversao", "parada há mais de 3 min (%s): reiniciando" % nome[:50])
+                matar_ffmpeg(nome)
+                return
+    threading.Thread(target=run, daemon=True, name="wf-conv").start()
 
 
 def etiquetar_mp3(caminho, info):
@@ -1102,10 +1153,10 @@ def definir_pausa(v):
 
 def definir_ajustes(rede=None, conv=None, leve=None):
     if rede is not None:
-        DEV["rede_n"] = max(2, min(6, int(rede)))
+        DEV["rede_n"] = max(2, min(5, int(rede)))
         REDE.set(DEV["rede_n"])
     if conv is not None:
-        DEV["conv_n"] = max(2, min(6, int(conv)))
+        DEV["conv_n"] = max(2, min(5, int(conv)))
         CONV.set(DEV["conv_n"])
     dev_log("ajuste", "downloads=%d conversões=%d" % (DEV["rede_n"], DEV["conv_n"]))
 
@@ -1167,7 +1218,14 @@ def _resumo(med):
         ini = med[0]["fim"] - med[0]["total"]
         span = med[-1]["fim"] - ini
         ph = round(n / span * 3600) if span > 0 and n >= 2 else (round(3600 / media["total"]) if media["total"] else 0)
-    return {"n": n, "medias": media, "por_hora": ph}
+    def _mediana(k):
+        v = sorted(m[k] for m in med)
+        if not v:
+            return 0
+        meio = len(v) // 2
+        return round(v[meio] if len(v) % 2 else (v[meio - 1] + v[meio]) / 2, 1)
+    mediana = {k: _mediana(k) for k in ("info", "dl", "conv", "espera", "total")}
+    return {"n": n, "medias": media, "medianas": mediana, "por_hora": ph}
 
 
 def dev_estado():
@@ -1182,7 +1240,7 @@ def dev_estado():
         c = {}
         for i in ITENS:
             c[i["status"]] = c.get(i["status"], 0) + 1
-    return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": atual["medias"], "n": atual["n"],
+    return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": atual["medias"], "medianas": atual["medianas"], "n": atual["n"],
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"]}
@@ -1194,10 +1252,12 @@ def processar(it):
     it.pop("_td", None)
     it.pop("_tf", None)
     it["_rap"] = bool(rapido_ligado() and it.get("fmt") == "mp3")
+    it.pop("_conv_fim", None)
     it["_t"] = {"ini": time.monotonic(), "espera": 0.0}
     try:
         _processar(it)
     finally:
+        it["_conv_fim"] = True
         rede_soltar(it)
         conv_soltar(it)
 
@@ -1313,7 +1373,7 @@ def indisponivel_de_verdade(it):
         m = re.search(r"([\w-]{11})(?:[&?#]|$)", it.get("url", ""))
         vid = m.group(1) if m else ""
         if not vid:
-            return False
+            return True          # sem ID de vídeo válido (11 caracteres): o link não existe
         TIT_CACHE.pop(vid, None)
         return bool(titulo_rapido(vid).get("indisp"))
     except Exception:
@@ -2483,18 +2543,19 @@ const titTxt=(id,d)=>d.titulo||((d.erro||d.tmp)?'Vídeo '+id:'Carregando...');
 function updTit(id){const d=TITS.get(id)||{};$$(`[data-tid="${id}"]`).forEach(e=>e.textContent=titTxt(id,d));$$(`[data-cid="${id}"]`).forEach(e=>e.textContent=d.canal||(d.erro?'Título indisponível':''))}
 const indisp=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).erro&&!TITS.get(x.id).titulo);
 const aoVivo=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).live);
+const invalido=x=>!x.pl&&!x.id;
 function tirarLink(url){const ta=$('#ta'),id=vidOf(url);
  ta.value=normLinks(ta.value).replace(LRE,m=>{const l=m.replace(/[.,;)>\]'"]+$/,'');return(l===url||(id&&vidOf(l)===id))?'':m}).replace(/[ \t]+\n/g,'\n').replace(/^[ \t]+|[ \t]+$/gm,'').replace(/\n{2,}/g,'\n').replace(/ {2,}/g,' ').trim();
  PVN=5;cnt()}
 function rpv(){const b=$('#pv');if(!LST.length){b.hidden=true;b.innerHTML='';return}
- const pls=LST.filter(x=>x.pl),sing=LST.filter(x=>!x.pl&&!indisp(x));pls.forEach(carregaPL);
+ const pls=LST.filter(x=>x.pl),sing=LST.filter(x=>!x.pl);pls.forEach(carregaPL);
  const vis=sing.slice(0,PVN),rest=sing.length-vis.length;b.hidden=false;
  b.innerHTML=pls.map(x=>plHTML(PLP[x.pid])).join('')+vis.map(x=>{const d=x.id?(TITS.get(x.id)||{}):{},j=!!(x.id&&JA.has(x.id));
   const th=x.id?`<img class="ft s" loading="lazy" src="https://i.ytimg.com/vi/${esc(x.id)}/mqdefault.jpg" alt="">`:'<span class="ft s"></span>';
-  const lv=aoVivo(x);
-  const l2=lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
-  const tt=x.id?`<div class="tt" data-tid="${esc(x.id)}">${esc(titTxt(x.id,d))}</div>${l2}`:`<div class="tt">Link do YouTube</div><div class="sm mut tt">${esc(short(x.url))}</div>`;
-  return `<div class="pr${j||lv?' off':''}" ${j||lv?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div><button class="pvx" data-rm="${esc(x.url)}" aria-label="Remover" data-i="x">×</button></div>`}).join('')+
+  const lv=aoVivo(x),iv=invalido(x),ix=indisp(x),bad=lv||iv||ix;
+  const l2=iv?'<div class="ja tt">Link inválido · não dá para baixar</div>':ix?'<div class="ja tt">Vídeo inexistente ou indisponível · não dá para baixar</div>':lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
+  const tt=x.id?`<div class="tt" data-tid="${esc(x.id)}">${esc(titTxt(x.id,d))}</div>${l2}`:`<div class="tt">${esc(short(x.url))}</div>${l2}`;
+  return `<div class="pr${j||bad?' off':''}" ${j||bad?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div><button class="pvx" data-rm="${esc(x.url)}" aria-label="Remover" data-i="x">×</button></div>`}).join('')+
   (rest>0?`<button class="t" id="pvmais">Ver mais (${Math.min(7,rest)})</button>`:'')+(PVN>5&&sing.length>5?'<button class="t" id="pvmenos">Recolher</button>':'');
  vis.forEach(x=>{if(x.id)fetchTit(x.id)})}
 $('#pv').onclick=e=>{const t=e.target;
@@ -2506,7 +2567,7 @@ $('#pv').onclick=e=>{const t=e.target;
  rpv();ccount()};
 $('#pv').onchange=e=>{const c=e.target.closest('input[data-pc]');if(!c)return;const p=PLP[c.dataset.pc];if(!p)return;c.checked?p.sel.add(c.dataset.vid):p.sel.delete(c.dataset.vid);const h=$(`[data-ph="${c.dataset.pc}"]`);if(h)h.textContent=plHead(p);ccount()};
 function ccount(){const MX=C.max_links||1000;let pls=0,sing=0,sel=0,est=0,pend=0,jaN=0;
- LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)){}else sing++});
+ LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)||invalido(x)){}else sing++});
  const tot=sing+sel;let s=LST.length?`${tot} ${tot===1?'item':'itens'}`+(pls?` · ${pls} playlist${pls>1?'s':''}`:'')+(pend?' · carregando...':''):(LR.dup?` · ${LR.dup} repetidos`:'');
  if(jaN)s+=` · ${jaN} duplicados marcados`;
  if(est)s+=` · ~${tamf(est)}`;
@@ -2538,7 +2599,7 @@ $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
   try{localStorage.setItem('wf_tit', JSON.stringify(window.__TIT))}catch(_){}
 }catch(_){}if(!r.n)return toast('Cole pelo menos um link do YouTube');
  if(r.lst.some(x=>x.pl&&PLP[x.pid]&&PLP[x.pid].loading))return toast('Aguarde o carregamento da playlist.');
- const keep=[],listas=[];r.lst.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&!p.erro&&p.itens.length){if(p.sel.size)listas.push({pid:p.pid,titulo:p.titulo,ids:p.itens.filter(i=>p.sel.has(i.id)).map(i=>i.id)})}else if(!(x.id&&JA.has(x.id))&&!indisp(x)&&!aoVivo(x))keep.push(x.url)});
+ const keep=[],listas=[];r.lst.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&!p.erro&&p.itens.length){if(p.sel.size)listas.push({pid:p.pid,titulo:p.titulo,ids:p.itens.filter(i=>p.sel.has(i.id)).map(i=>i.id)})}else if(!(x.id&&JA.has(x.id))&&!indisp(x)&&!aoVivo(x)&&!invalido(x))keep.push(x.url)});
  
  const b=$('#bgo');b.disabled=true;b.textContent='Processando links...';
  try{const d=await api('/api/add',{texto:keep.join('\n'),listas,titulos:window.__TIT||{}});$('#ta').value='';PVN=5;let m=d.add?`${d.add} adicionado${d.add>1?'s':''}`:`Nada novo`;
