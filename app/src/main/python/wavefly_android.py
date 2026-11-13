@@ -234,9 +234,19 @@ def ajustar_html(html):
         _log('falha ao montar a interface extra: %s' % e)
         extra = CSS + JS
     pos = html.rfind("</body>")
-    if pos < 0:
-        return html + extra
-    return html[:pos] + extra + html[pos:]
+    html = html + extra if pos < 0 else html[:pos] + extra + html[pos:]
+    return forcar_escuro(html)
+
+
+def forcar_escuro(html):
+    """O app é sempre escuro, não importa o tema do celular."""
+    import re as _re
+    html = _re.sub(r"@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)", "@media all", html)
+    html = _re.sub(r"@media\s*\(\s*prefers-color-scheme\s*:\s*light\s*\)", "@media not all", html)
+    html = html.replace('<meta name="color-scheme" content="dark light">', '<meta name="color-scheme" content="dark">')
+    html = html.replace('<meta name="theme-color" content="#f3e6cc" media="(prefers-color-scheme: light)">', '')
+    html = html.replace('<meta name="theme-color" content="#1f1510" media="(prefers-color-scheme: dark)">', '<meta name="theme-color" content="#1f1510">')
+    return html
 
 
 def corrigir_capas(w):
@@ -270,7 +280,7 @@ def rotas(w):
         try:
             from urllib.parse import urlparse, parse_qs
             u = urlparse(self.path)
-            if u.path in ("/api/combina", "/api/ytdlp", "/api/pausa", "/api/dev") and self._host_ok():
+            if u.path in ("/api/ytdlp", "/api/pausa", "/api/dev") and self._host_ok():
                 q = parse_qs(u.query)
                 if u.path == "/api/pausa":
                     if (q.get("v") or [""])[0] in ("0", "1"):
@@ -287,14 +297,13 @@ def rotas(w):
                     if any((q.get(k) or [""])[0] for k in ("rede", "conv")):
                         g = lambda k: (q.get(k) or [""])[0]
                         w.definir_ajustes(int(g("rede")) if g("rede") else None, int(g("conv")) if g("conv") else None)
+                    if (q.get("longas") or [""])[0].isdigit():
+                        w.definir_longas(int(q["longas"][0]))
                     if (q.get("limpar") or [""])[0]:
                         with w.DEV_LOCK:
                             w.DEV["log"].clear()
                             w.DEV["medidas"].clear()
                     return self._json(w.dev_estado())
-                if u.path == "/api/combina":
-                    import wavefly_recs
-                    return self._json(wavefly_recs.proximas(w, 4))
                 import app_entry
                 res = ""
                 if (q.get("forcar") or [""])[0]:

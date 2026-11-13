@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="wf_bg">#F3E6CC</color>
+    <color name="wf_bg">#1F1510</color>
     <color name="wf_accent">#D9692A</color>
     <color name="wf_cream">#FBF3E1</color>
 </resources>

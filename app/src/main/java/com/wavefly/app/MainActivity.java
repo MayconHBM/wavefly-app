@@ -47,10 +47,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         atual = this;
-        boolean escuro = (getResources().getConfiguration().uiMode
-                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        int fundo = escuro ? 0xFF1F1510 : 0xFFF3E6CC;
+        boolean escuro = true;   // o app é sempre escuro
+        int fundo = 0xFF1F1510;
+        try {   // garante que o ícone padrão está ativo (as opções de ícone alternativo foram removidas)
+            getPackageManager().setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), "com.wavefly.app.Icone0"),
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, android.content.pm.PackageManager.DONT_KILL_APP);
+        } catch (Throwable ignored) {
+        }
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(fundo);
@@ -270,34 +273,6 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pAtivo = ativo == 1;
         }
 
-        /** Ícones alternativos do app (teste): 0 = padrão, 1..5 = outros. */
-        @JavascriptInterface
-        public void setIcone(int n) {
-            try {
-                android.content.pm.PackageManager pm = getPackageManager();
-                for (int i = 0; i <= 5; i++) {
-                    pm.setComponentEnabledSetting(new android.content.ComponentName(getPackageName(), "com.wavefly.app.Icone" + i),
-                            i == n ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                                    : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                            android.content.pm.PackageManager.DONT_KILL_APP);
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        @JavascriptInterface
-        public int icone() {
-            try {
-                android.content.pm.PackageManager pm = getPackageManager();
-                for (int i = 1; i <= 5; i++) {
-                    if (pm.getComponentEnabledSetting(new android.content.ComponentName(getPackageName(), "com.wavefly.app.Icone" + i))
-                            == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return i;
-                }
-            } catch (Throwable ignored) {
-            }
-            return 0;
-        }
-
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */
         @JavascriptInterface
         public void stream(final String id) {
@@ -360,26 +335,6 @@ public class MainActivity extends AppCompatActivity {
                         + ",\"memMb\":" + (mi.getTotalPss() / 1024) + ",\"rede\":\"" + rede + "\"}";
             } catch (Throwable t) {
                 return "{\"bat\":0,\"carregando\":false,\"memMb\":0,\"rede\":\"?\"}";
-            }
-        }
-
-        @JavascriptInterface
-        public boolean email(final String para, final String assunto, final String corpo) {
-            try {
-                final Intent i = new Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"));
-                i.putExtra(Intent.EXTRA_EMAIL, new String[]{para});
-                i.putExtra(Intent.EXTRA_SUBJECT, assunto);
-                i.putExtra(Intent.EXTRA_TEXT, corpo);
-                if (i.resolveActivity(getPackageManager()) == null) return false;
-                runOnUiThread(() -> {
-                    try {
-                        startActivity(i);
-                    } catch (Throwable ignored) {
-                    }
-                });
-                return true;
-            } catch (Throwable t) {
-                return false;
             }
         }
 

@@ -391,6 +391,9 @@ def eh_ao_vivo(vid):
                                               "Accept-Language": "en-US,en;q=0.9", "Cookie": "CONSENT=YES+1"})
         with urllib.request.urlopen(req, timeout=8) as r:
             html = r.read(900000).decode("utf-8", "ignore")
+        m = re.search(r'"lengthSeconds":"(\d+)"', html)
+        if m and int(m.group(1)) > 0:
+            DURS[vid] = int(m.group(1))
         if '"isLiveNow":true' in html or '"isLive":true' in html:
             return True
         if '"isUpcoming":true' in html:
@@ -1040,14 +1043,26 @@ def vigiar_conversao(it, destino, nome):
         while it.get("status") == "baixando" and it.get("_conv_gen") == gen and not it.get("_conv_fim") and not it.get("cancel"):
             time.sleep(2)
             dec = int(time.monotonic() - ini)
-            it["vel"] = "Convertendo… %d:%02d" % (dec // 60, dec % 60)
             ult = 0.0
+            tam = 0
             try:
                 for f in os.listdir(destino):
                     if f.startswith(nome):
-                        ult = max(ult, os.path.getmtime(os.path.join(destino, f)))
+                        cam = os.path.join(destino, f)
+                        ult = max(ult, os.path.getmtime(cam))
+                        if f.lower().endswith(".mp3"):
+                            tam = max(tam, os.path.getsize(cam))
             except OSError:
                 pass
+            pc = ""
+            try:
+                kb = int(it.get("qual") or 0)
+                dur = it.get("dur") or 0
+                if dur and 32 <= kb <= 400 and tam:
+                    pc = "%d%% · " % max(1, min(99, round(tam / (dur * kb * 125) * 100)))
+            except Exception:
+                pass
+            it["vel"] = "Convertendo… %s%d:%02d" % (pc, dec // 60, dec % 60)
             if ult and dec > 180 and time.time() - ult > 180:
                 dev_log("conversao", "parada há mais de 3 min (%s): reiniciando" % nome[:50])
                 matar_ffmpeg(nome)
@@ -1091,7 +1106,7 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0, "longas_min": 30, "falhas_det": []}
 DEV_LOCK = threading.Lock()
 class Limite:
     """Semáforo cujo limite pode mudar na hora (o painel do desenvolvedor ajusta)."""
@@ -1159,6 +1174,21 @@ def definir_ajustes(rede=None, conv=None, leve=None):
         DEV["conv_n"] = max(2, min(5, int(conv)))
         CONV.set(DEV["conv_n"])
     dev_log("ajuste", "downloads=%d conversões=%d" % (DEV["rede_n"], DEV["conv_n"]))
+
+
+def definir_longas(minutos):
+    DEV["longas_min"] = max(0, min(100000, int(minutos)))
+    dev_log("ajuste", "músicas longas: %s" % ("sempre baixar" if not DEV["longas_min"] else "até %d min (+3 de margem)" % DEV["longas_min"]))
+
+
+def longa_demais(it, dur):
+    """MP3 acima do limite escolhido no painel (com 3 min de margem)? Devolve a mensagem de aviso ou ''."""
+    lim = DEV.get("longas_min", 0)
+    if not lim or it.get("fmt") != "mp3" or not dur:
+        return ""
+    if dur > (lim + 3) * 60:
+        return "Longa demais (%d min). Limite: %d min. Mude em Desenvolvedor › Músicas longas." % (round(dur / 60), lim)
+    return ""
 
 
 def trabalhadores_ativos():
@@ -1243,7 +1273,8 @@ def dev_estado():
     return {"rapido": DEV["rapido"], "freio": DEV["freio"], "pausado": PAUSA["on"], "medias": atual["medias"], "medianas": atual["medianas"], "n": atual["n"],
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
-            "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"]}
+            "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
+            "falhas_det": list(DEV["falhas_det"][-15:])}
 
 
 def processar(it):
@@ -1268,6 +1299,10 @@ def _processar(it):
         rede_pegar(it)
         it["_t"]["espera"] = time.monotonic() - t_ini
     titulo_preview = it.get("titulo") or ""
+    aviso_longa = longa_demais(it, it.get("dur") or DURS.get(chave(it["url"]), 0))
+    if aviso_longa:
+        marcar(it, "falha", aviso_longa)
+        return
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     try:
         info, titulo, base = obter_info(it["url"], it.get("_alt", 0))
@@ -1290,6 +1325,10 @@ def _processar(it):
     if info.get("duration"):
         it["dur"] = info["duration"]
         DURS[chave(it["url"])] = info["duration"]
+    aviso_longa = longa_demais(it, info.get("duration") or 0)
+    if aviso_longa:
+        marcar(it, "falha", aviso_longa)
+        return
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
     r = it["pasta"]
@@ -1348,13 +1387,21 @@ def esperar(seg, parar=None):
 
 def pegar():
     with LOCK:
+        agora = time.time()
+        melhor = None
         for i in ITENS:
-            if i["status"] == "fila" and i.get("_nao_antes", 0) <= time.time():
-                i.update(status="baixando", pct=0, vel="Lendo título…", erro="", cancel=False)
-                if SESS["inicio"] is None:
-                    SESS["inicio"] = time.time()
-                SESS["fim"] = None
-                return i
+            if i["status"] == "fila" and i.get("_nao_antes", 0) <= agora:
+                # músicas curtas primeiro (duração desconhecida conta como uma música comum)
+                d = i.get("dur") or DURS.get(chave(i["url"]), 0) or 240
+                if melhor is None or d < melhor[0] - 60:
+                    melhor = (d, i)
+        if melhor:
+            i = melhor[1]
+            i.update(status="baixando", pct=0, vel="Lendo título…", erro="", cancel=False)
+            if SESS["inicio"] is None:
+                SESS["inicio"] = time.time()
+            SESS["fim"] = None
+            return i
     return None
 
 
@@ -1407,7 +1454,11 @@ def tratar_falha(it, erro):
         dev_log("tentativa", "%s (%d/4): %s" % (nome, tent, erro[:150]))
         return bloqueio
     DEV["falha"] += 1
-    dev_log("erro", "%s: %s" % (nome, erro[:200]))
+    dev_log("erro", "%s: %s" % (nome, erro[:500]))
+    with DEV_LOCK:
+        DEV["falhas_det"].append({"t": time.strftime("%H:%M:%S"), "titulo": nome, "url": it.get("url", ""), "tent": tent,
+                                  "dur": it.get("dur", 0), "erro": erro[:600]})
+        del DEV["falhas_det"][:-40]
     if bloqueio:
         msg = "YouTube bloqueou temporariamente (confirmação necessária)"
     elif permanente:
@@ -1866,9 +1917,16 @@ class H(BaseHTTPRequestHandler):
                 nome = re.sub(r"[^\w .-]", "", (q.get("n") or ["WaveFly.zip"])[0])[:60] or "WaveFly.zip"
                 return self._audio("", anexo=True, abs_path=os.path.join(ZIP_DIR, t + ".zip"), nome=nome)
             if p == "/api/aovivo":
-                return self._json({"live": ao_vivo((q.get("id") or [""])[0])})
+                vid_ = (q.get("id") or [""])[0]
+                return self._json({"live": ao_vivo(vid_), "dur": DURS.get(vid_, 0)})
             if p == "/api/titulo":
                 return self._json(titulo_rapido((q.get("id") or [""])[0], bool((q.get("live") or [""])[0])))
+            if p == "/api/espaco":
+                try:
+                    du = shutil.disk_usage(raiz() if os.path.isdir(raiz()) else BASE)
+                    return self._json({"livre": du.free, "total": du.total})
+                except Exception:
+                    return self._json({"livre": 0, "total": 0})
             if p == "/api/existe":
                 ids = [v for v in (q.get("ids") or [""])[0].split(",") if re.fullmatch(r"[\w-]{11}", v)][:400]
                 import urllib.parse as _up; _q=_up.parse_qs(_up.urlparse(self.path).query); _sub=_q.get("sub",[""])[0]; return self._json({"ja": [v for v in ids if ja_existe(v, pasta=raiz(), sub=_sub)]})
@@ -2536,7 +2594,7 @@ const TITS=new Map(),TQ=[];let TA=0;
 function fetchTit(id){if(TITS.has(id)||TQ.includes(id))return;TQ.push(id);pumpT()}
 let RPVT=0;function refazer(){clearTimeout(RPVT);RPVT=setTimeout(()=>{rpv();ccount()},120)}
 const TRY={},LQ=[];let LA=0;
-function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer();toast('Transmissão ao vivo não dá para baixar')}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
+function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.dur){TITS.set(id,Object.assign({},TITS.get(id)||{},{dur:d.dur}));ccount()}if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer();toast('Transmissão ao vivo não dá para baixar')}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
 function pumpT(){while(TA<4&&TQ.length){const id=TQ.shift();TA++;const falhou=()=>{TRY[id]=(TRY[id]||0)+1;if(TRY[id]<=3)setTimeout(()=>fetchTit(id),2000*TRY[id]);else TITS.set(id,{titulo:'',canal:'',tmp:true})};
  api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=40){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
 const titTxt=(id,d)=>d.titulo||((d.erro||d.tmp)?'Vídeo '+id:'Carregando...');
@@ -2566,11 +2624,14 @@ $('#pv').onclick=e=>{const t=e.target;
  if(k==='open')p.open=!p.open;else if(k==='all')p.sel=new Set(p.itens.filter(i=>!i.ja).map(i=>i.id));else if(k==='none')p.sel.clear();else if(k==='more')p.vis+=10;
  rpv();ccount()};
 $('#pv').onchange=e=>{const c=e.target.closest('input[data-pc]');if(!c)return;const p=PLP[c.dataset.pc];if(!p)return;c.checked?p.sel.add(c.dataset.vid):p.sel.delete(c.dataset.vid);const h=$(`[data-ph="${c.dataset.pc}"]`);if(h)h.textContent=plHead(p);ccount()};
+let FREE=0,ESPT=0,AVESP=0;function espaco(){const t=Date.now();if(t-ESPT<20000)return;ESPT=t;api('/api/espaco').then(d=>{FREE=d.livre||0;ccount()}).catch(()=>{})}
 function ccount(){const MX=C.max_links||1000;let pls=0,sing=0,sel=0,est=0,pend=0,jaN=0;
- LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)||invalido(x)){}else sing++});
+ LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)||invalido(x)){}else{sing++;est+=estB(((x.id&&TITS.get(x.id))||{}).dur||240)}});
  const tot=sing+sel;let s=LST.length?`${tot} ${tot===1?'item':'itens'}`+(pls?` · ${pls} playlist${pls>1?'s':''}`:'')+(pend?' · carregando...':''):(LR.dup?` · ${LR.dup} repetidos`:'');
  if(jaN)s+=` · ${jaN} duplicados marcados`;
  if(est)s+=` · ~${tamf(est)}`;
+ espaco();const pouco=est&&FREE&&est>FREE*0.9;if(pouco)s+=` · ⚠ pode faltar espaço (${tamf(FREE)} livres)`;
+ $('#cnt').style.color=pouco?'#e5634d':'';if(pouco&&!AVESP){AVESP=1;toast('Pode faltar espaço: a lista deve ocupar ~'+tamf(est)+' e há '+tamf(FREE)+' livres')}if(!pouco)AVESP=0;
  $('#cnt').textContent=s;$('#bgo').textContent=tot>1?`Baixar ${Math.min(tot,MX)}`:'Baixar';$('#bgo').hidden=!(tot>0)}
 let LASTDUP=0;
 function cnt(){
