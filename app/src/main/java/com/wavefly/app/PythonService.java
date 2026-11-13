@@ -131,10 +131,11 @@ public class PythonService extends Service {
         }
         if (ACTION_BACK10.equals(act) || ACTION_FWD10.equals(act)) {
             // A página faz a conta com a posição real do áudio (a nossa pode estar atrasada).
-            long novo = posAgora() + (ACTION_FWD10.equals(act) ? 10000 : -10000);
+            int passo = passoSeg();
+            long novo = posAgora() + (ACTION_FWD10.equals(act) ? passo * 1000L : -passo * 1000L);
             pPosMs = Math.max(0, pDurMs > 0 ? Math.min(novo, pDurMs) : novo);
             pEm = SystemClock.elapsedRealtime();
-            MainActivity.comandoPlayer(ACTION_FWD10.equals(act) ? "rel:10" : "rel:-10");
+            MainActivity.comandoPlayer(ACTION_FWD10.equals(act) ? "rel:" + passo : "rel:-" + passo);
             ultimaChave = "";
             return START_STICKY;
         }
@@ -300,7 +301,7 @@ public class PythonService extends Service {
         if (musica) buscarCapa(pCapa);
         // A posição entra na chave só em segundos: no máximo uma atualização por segundo (o Android descarta o excesso).
         String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
-                + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa;
+                + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa + "|" + estiloCapa() + "|" + passoSeg();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
@@ -356,14 +357,18 @@ public class PythonService extends Service {
         String contagem = feitos + "/" + total;
         if (musica) {
             atualizarSessao();
-            b.setColor(0xFF3B2314).setColorized(true).setShowWhen(false);
+            if (estiloCapa().equals("fundo") && capaBmp != null && capaDe.equals(pCapa)) prepararFundo(capaBmp);
+            b.setColor(estiloCapa().equals("fundo") && fundoCor != 0 && fundoDe.equals(capaDe) ? fundoCor : 0xFF3B2314).setColorized(true).setShowWhen(false);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly" : pTitulo);
             b.setContentText(pSub);
             b.setDeleteIntent(PendingIntent.getService(this, 9,
                     new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-            android.widget.RemoteViews rv = visaoMusica(R.layout.notif_player, baixando, feitos, total, contagem, true);
-            android.widget.RemoteViews rvp = visaoMusica(R.layout.notif_player_small, baixando, feitos, total, contagem, false);
+            String est = estiloCapa();
+            int lg = est.equals("dir") ? R.layout.notif_player_dir : est.equals("fundo") ? R.layout.notif_player_fundo : R.layout.notif_player;
+            int lp = est.equals("dir") ? R.layout.notif_player_small_dir : est.equals("fundo") ? R.layout.notif_player_small_fundo : R.layout.notif_player_small;
+            android.widget.RemoteViews rv = visaoMusica(lg, baixando, feitos, total, contagem, true, est);
+            android.widget.RemoteViews rvp = visaoMusica(lp, baixando, feitos, total, contagem, false, est);
             b.setStyle(new Notification.DecoratedCustomViewStyle());
             b.setCustomContentView(rvp);
             b.setCustomBigContentView(rv);
@@ -379,24 +384,94 @@ public class PythonService extends Service {
         return b.build();
     }
 
+    private volatile Bitmap fundoBmp = null;
+    private volatile String fundoDe = "";
+    private volatile int fundoCor = 0;
+
+    /** "esq", "dir" ou "fundo": onde fica a capa na notificação (escolhido no painel do desenvolvedor). */
+    private String estiloCapa() {
+        String v = Idioma.prefs(this).getString("p_capa", "esq");
+        return "dir".equals(v) || "fundo".equals(v) ? v : "esq";
+    }
+
+    /** Tamanho do pulo dos botões (10, 15 ou 30 segundos). */
+    private int passoSeg() {
+        try {
+            int n = Integer.parseInt(Idioma.prefs(this).getString("p_passo", "10"));
+            if (n == 15 || n == 30) return n;
+        } catch (Throwable ignored) {
+        }
+        return 10;
+    }
+
+    /** Capa recortada, levemente desfocada e escurecida, para usar de fundo da notificação. */
+    private void prepararFundo(Bitmap src) {
+        if (src == null || fundoDe.equals(capaDe)) return;
+        try {
+            int w = 480, h = 240;
+            float sa = (float) src.getWidth() / src.getHeight(), da = (float) w / h;
+            int cx, cy, cw, ch;
+            if (sa > da) {
+                cw = (int) (src.getHeight() * da);
+                ch = src.getHeight();
+                cx = (src.getWidth() - cw) / 2;
+                cy = 0;
+            } else {
+                cw = src.getWidth();
+                ch = (int) (src.getWidth() / da);
+                cx = 0;
+                cy = (src.getHeight() - ch) / 2;
+            }
+            Bitmap corte = Bitmap.createBitmap(src, cx, cy, Math.max(1, cw), Math.max(1, ch));
+            Bitmap pequeno = Bitmap.createScaledBitmap(corte, 160, 80, true);
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas c = new android.graphics.Canvas(out);
+            android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG | android.graphics.Paint.ANTI_ALIAS_FLAG);
+            c.drawBitmap(pequeno, null, new android.graphics.Rect(0, 0, w, h), p);
+            p.setShader(new android.graphics.LinearGradient(0, 0, w, 0, 0xCC140C08, 0x8C140C08, android.graphics.Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, p);
+            int px = Bitmap.createScaledBitmap(corte, 1, 1, true).getPixel(0, 0);
+            fundoCor = 0xFF000000 | (((px >> 16 & 0xFF) * 45 / 100) << 16) | (((px >> 8 & 0xFF) * 45 / 100) << 8) | ((px & 0xFF) * 45 / 100);
+            fundoBmp = out;
+            fundoDe = capaDe;
+        } catch (Throwable t) {
+            fundoBmp = null;
+            fundoDe = capaDe;
+            fundoCor = 0;
+        }
+    }
+
     private PendingIntent pend(String action, int codigo) {
         return PendingIntent.getService(this, codigo, new Intent(this, PythonService.class).setAction(action),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /** Layout próprio da notificação do player (sem a barra do sistema): capa, título, barra laranja e botões. */
-    private android.widget.RemoteViews visaoMusica(int layout, boolean baixando, int feitos, int total, String contagem, boolean grande) {
+    private android.widget.RemoteViews visaoMusica(int layout, boolean baixando, int feitos, int total, String contagem, boolean grande, String est) {
         android.widget.RemoteViews rv = new android.widget.RemoteViews(getPackageName(), layout);
         rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly" : pTitulo);
         long pos = posAgora();
         Bitmap cb = capaBmp;
-        if (cb != null && capaDe.equals(pCapa)) rv.setImageViewBitmap(R.id.n_capa, cb);
-        else rv.setImageViewResource(R.id.n_capa, R.drawable.ic_notification);
+        boolean temCapa = cb != null && capaDe.equals(pCapa);
+        if (est.equals("fundo")) {
+            if (temCapa) {
+                prepararFundo(cb);
+                if (fundoBmp != null && fundoDe.equals(capaDe)) rv.setImageViewBitmap(R.id.n_fundo, fundoBmp);
+            } else {
+                rv.setImageViewResource(R.id.n_fundo, R.drawable.ic_notification);
+            }
+        } else if (temCapa) {
+            rv.setImageViewBitmap(R.id.n_capa, cb);
+        } else {
+            rv.setImageViewResource(R.id.n_capa, R.drawable.ic_notification);
+        }
         if (grande) {
             rv.setTextViewText(R.id.n_sub, pSub);
             rv.setTextViewText(R.id.n_t1, fmt(pos));
             rv.setTextViewText(R.id.n_t2, pDurMs > 0 ? fmt(pDurMs) : "");
             rv.setViewVisibility(R.id.n_linha_prog, pDurMs > 0 ? android.view.View.VISIBLE : android.view.View.GONE);
+            rv.setTextViewText(R.id.n_b10t, String.valueOf(passoSeg()));
+            rv.setTextViewText(R.id.n_f10t, String.valueOf(passoSeg()));
             rv.setOnClickPendingIntent(R.id.n_b10, pend(ACTION_BACK10, 6));
             rv.setOnClickPendingIntent(R.id.n_f10, pend(ACTION_FWD10, 7));
             rv.setOnClickPendingIntent(R.id.n_x, pend(ACTION_DISPENSADA, 10));

@@ -9,7 +9,7 @@ Uso:   python wavefly_yt.py          ->  abre http://localhost:8773
 
 Precisa de:  pip install -U yt-dlp   (+ ffmpeg instalado)
 """
-import argparse, copy, hashlib, json, os, re, shutil, signal, subprocess, sys, threading, time, unicodedata, uuid, webbrowser, zipfile
+import argparse, copy, hashlib, json, os, re, shutil, signal, subprocess, sys, threading, time, traceback, unicodedata, uuid, webbrowser, zipfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -264,17 +264,24 @@ def expandir_playlist(url):
 CLIENTES_ALT = [None, ["mweb"], ["tv"], ["web_safari"], ["ios"]]
 
 
+def _nome_base(ydl, info):
+    try:
+        return os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
+    except Exception:
+        return re.sub(r'[\\/:*?"<>|]', "", str(info.get("title") or "")).strip()[:80]
+
+
 def obter_info(url, alt=0):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
     cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
     if cli:
         with yt_dlp.YoutubeDL(dict(OPTS, extractor_args={"youtube": {"player_client": cli}})) as ydl:
             info = ydl.extract_info(url, download=False)
-            base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
+            base = _nome_base(ydl, info)
         return info, info.get("title", "sem título"), base
     with yt_dlp.YoutubeDL(OPTS) as ydl:
         info = ydl.extract_info(url, download=False)
-        base = os.path.splitext(os.path.basename(ydl.prepare_filename(info)))[0]
+        base = _nome_base(ydl, info)
     return info, info.get("title", "sem título"), base
 
 
@@ -391,9 +398,20 @@ def eh_ao_vivo(vid):
                                               "Accept-Language": "en-US,en;q=0.9", "Cookie": "CONSENT=YES+1"})
         with urllib.request.urlopen(req, timeout=8) as r:
             html = r.read(900000).decode("utf-8", "ignore")
-        m = re.search(r'"lengthSeconds":"(\d+)"', html)
-        if m and int(m.group(1)) > 0:
-            DURS[vid] = int(m.group(1))
+        seg = 0
+        m = re.search(r'lengthSeconds\\?"\s*:\s*\\?"(\d+)', html)
+        if m:
+            seg = int(m.group(1))
+        if not seg:
+            m = re.search(r'approxDurationMs\\?"\s*:\s*\\?"(\d+)', html)
+            if m:
+                seg = int(m.group(1)) // 1000
+        if not seg:
+            m = re.search(r'itemprop="duration" content="PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?"', html)
+            if m:
+                seg = int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0)
+        if seg > 0:
+            DURS[vid] = seg
         if '"isLiveNow":true' in html or '"isLive":true' in html:
             return True
         if '"isUpcoming":true' in html:
@@ -1009,7 +1027,7 @@ def baixar(it, info, nome, destino):
         etiquetar_mp3(os.path.join(destino, nome + ".mp3"), info)
 
 
-def matar_ffmpeg(nome):
+def matar_ffmpeg_de(nome):
     """Encerra o ffmpeg que está convertendo este arquivo (o yt-dlp então acusa erro e o item entra na nova tentativa)."""
     n = 0
     try:
@@ -1065,7 +1083,7 @@ def vigiar_conversao(it, destino, nome):
             it["vel"] = "Convertendo… %s%d:%02d" % (pc, dec // 60, dec % 60)
             if ult and dec > 180 and time.time() - ult > 180:
                 dev_log("conversao", "parada há mais de 3 min (%s): reiniciando" % nome[:50])
-                matar_ffmpeg(nome)
+                matar_ffmpeg_de(nome)
                 return
     threading.Thread(target=run, daemon=True, name="wf-conv").start()
 
@@ -1106,7 +1124,7 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0, "longas_min": 30, "falhas_det": []}
+DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 0.6, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0, "longas_min": 0, "falhas_det": [], "cond_wifi": False, "cond_carga": False, "bat_min": 20, "lotes": []}
 DEV_LOCK = threading.Lock()
 class Limite:
     """Semáforo cujo limite pode mudar na hora (o painel do desenvolvedor ajusta)."""
@@ -1174,6 +1192,96 @@ def definir_ajustes(rede=None, conv=None, leve=None):
         DEV["conv_n"] = max(2, min(5, int(conv)))
         CONV.set(DEV["conv_n"])
     dev_log("ajuste", "downloads=%d conversões=%d" % (DEV["rede_n"], DEV["conv_n"]))
+
+
+_EST = {"t": 0.0, "v": None}
+
+
+def estado_aparelho():
+    """Bateria, temperatura, rede e estado térmico (lido do Android; guarda por 3 s). None se não der para saber."""
+    agora = time.time()
+    if agora - _EST["t"] < 3:
+        return _EST["v"]
+    v = None
+    try:
+        fake = os.environ.get("WAVEFLY_FAKE_ESTADO")
+        if fake:
+            with open(fake) as f:
+                v = json.load(f)
+        else:
+            from java import jclass
+            ctx = jclass("com.chaquo.python.Python").getPlatform().getApplication()
+            v = json.loads(str(jclass("com.wavefly.app.Estado").json(ctx)))
+        if not v or "bat" not in v:
+            v = None
+    except Exception:
+        v = None
+    _EST["t"], _EST["v"] = agora, v
+    return v
+
+
+def definir_condicoes(wifi=None, carga=None, bat_min=None):
+    if wifi is not None:
+        DEV["cond_wifi"] = bool(wifi)
+    if carga is not None:
+        DEV["cond_carga"] = bool(carga)
+    if bat_min is not None:
+        DEV["bat_min"] = max(0, min(50, int(bat_min)))
+    dev_log("ajuste", "condições: Wi-Fi %s · carregando %s · bateria mínima %s" % (
+        "sim" if DEV["cond_wifi"] else "não", "sim" if DEV["cond_carga"] else "não",
+        ("%d%%" % DEV["bat_min"]) if DEV["bat_min"] else "desligada"))
+
+
+def condicao_bloqueia():
+    """Texto do motivo para não iniciar novas músicas agora (vazio = pode baixar)."""
+    if not (DEV["cond_wifi"] or DEV["cond_carga"] or DEV["bat_min"]):
+        return ""
+    e = estado_aparelho()
+    if not e:
+        return ""
+    if DEV["cond_wifi"] and e.get("rede") != "Wi-Fi":
+        return "Aguardando Wi-Fi…"
+    if DEV["cond_carga"] and not e.get("carregando"):
+        return "Aguardando o carregador…"
+    if DEV["bat_min"] and not e.get("carregando") and e.get("bat", 100) < DEV["bat_min"]:
+        return "Bateria baixa (%d%%). Conecte o carregador." % e["bat"]
+    return ""
+
+
+LOTE = {"ativo": False}
+
+
+def _amostrar_lote():
+    """Enquanto há downloads, anota bateria e temperatura; no fim guarda o resumo do lote."""
+    while True:
+        time.sleep(5)
+        try:
+            ativo = bool(SESS["inicio"] and SESS["fim"] is None)
+            e = estado_aparelho()
+            if ativo and e:
+                if not LOTE["ativo"]:
+                    LOTE.update(ativo=True, ini=time.time(), bat_ini=e["bat"], temp_ini=e.get("temp", 0), temp_max=e.get("temp", 0),
+                                termico=e.get("termico", 0), carga=bool(e.get("carregando")), ok0=DEV["ok"], falha0=DEV["falha"])
+                else:
+                    LOTE["temp_max"] = max(LOTE["temp_max"], e.get("temp", 0))
+                    LOTE["termico"] = max(LOTE["termico"], e.get("termico", 0))
+                    LOTE["carga"] = LOTE["carga"] or bool(e.get("carregando"))
+            elif LOTE["ativo"] and not ativo:
+                LOTE["ativo"] = False
+                n = DEV["ok"] - LOTE["ok0"]
+                if n > 0:
+                    fim_bat = (e or {}).get("bat", LOTE["bat_ini"])
+                    DEV["lotes"].append({"t": time.strftime("%H:%M"), "musicas": n, "falhas": DEV["falha"] - LOTE["falha0"],
+                                         "seg": int(time.time() - LOTE["ini"]), "bat_ini": LOTE["bat_ini"], "bat_fim": fim_bat,
+                                         "temp_ini": LOTE["temp_ini"], "temp_max": LOTE["temp_max"], "termico": LOTE["termico"],
+                                         "carga": LOTE["carga"], "rap": bool(DEV["rapido"] and not DEV["freio"]),
+                                         "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"]})
+                    del DEV["lotes"][:-10]
+        except Exception:
+            pass
+
+
+threading.Thread(target=_amostrar_lote, daemon=True, name="wf-lote").start()
 
 
 def definir_longas(minutos):
@@ -1274,7 +1382,25 @@ def dev_estado():
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
-            "falhas_det": list(DEV["falhas_det"][-15:])}
+            "falhas_det": list(DEV["falhas_det"][-25:]), "lotes": list(DEV["lotes"][-5:]),
+            "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
+            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(),
+            "fila_int": fila_interna()}
+
+
+def fila_interna():
+    """Visão técnica da fila para o painel (sem nomes das músicas do teste)."""
+    with LOCK:
+        out = []
+        for i in ITENS[:60]:
+            if i.get("_teste"):
+                continue
+            t = i.get("_t") or {}
+            out.append({"id": i["id"], "titulo": (i.get("titulo") or i.get("url") or "")[:48], "st": i["status"],
+                        "tent": i.get("_tent", 0), "alt": i.get("_alt", 0), "dur": i.get("dur", 0),
+                        "info": round(t.get("info", 0), 1), "dl": round(t.get("dl", 0), 1), "conv": round(t.get("conv", 0), 1),
+                        "espera": round(max(0, i.get("_nao_antes", 0) - time.time())), "vel": (i.get("vel") or "")[:30]})
+        return out
 
 
 def processar(it):
@@ -1304,10 +1430,17 @@ def _processar(it):
         marcar(it, "falha", aviso_longa)
         return
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
+    erro_info = None
     try:
         info, titulo, base = obter_info(it["url"], it.get("_alt", 0))
-    except Exception:
+    except Exception as ex_info:
+        erro_info = ex_info
         info, titulo, base = {}, titulo_preview, ""
+    if not info:
+        # sem as informações do vídeo não dá para baixar: mostra o erro de verdade (e deixa tentar de novo)
+        if it["cancel"]:
+            raise RuntimeError("cancelado_pelo_usuario")
+        raise erro_info or RuntimeError("Não consegui ler as informações do vídeo")
     # se o titulo novo vier vazio / generico, mantém o do preview
     if not titulo or titulo.strip() in ("", "sem título"):
         titulo = titulo_preview
@@ -1434,6 +1567,14 @@ def tratar_falha(it, erro):
     except Exception:
         pass
     nome = (it.get("titulo") or it.get("url") or "")[:60]
+    try:
+        tb = " | ".join(l.strip() for l in traceback.format_exc().splitlines()[-6:])
+    except Exception:
+        tb = ""
+    with DEV_LOCK:
+        DEV["falhas_det"].append({"t": time.strftime("%H:%M:%S"), "titulo": nome, "url": it.get("url", ""), "tent": it.get("_tent", 0) + 1,
+                                  "alt": it.get("_alt", 0), "dur": it.get("dur", 0), "erro": erro[:600], "tb": tb[:700]})
+        del DEV["falhas_det"][:-60]
     bloqueio = bloqueio_youtube(erro)
     e = erro.lower()
     if bloqueio:
@@ -1455,10 +1596,6 @@ def tratar_falha(it, erro):
         return bloqueio
     DEV["falha"] += 1
     dev_log("erro", "%s: %s" % (nome, erro[:500]))
-    with DEV_LOCK:
-        DEV["falhas_det"].append({"t": time.strftime("%H:%M:%S"), "titulo": nome, "url": it.get("url", ""), "tent": tent,
-                                  "dur": it.get("dur", 0), "erro": erro[:600]})
-        del DEV["falhas_det"][:-40]
     if bloqueio:
         msg = "YouTube bloqueou temporariamente (confirmação necessária)"
     elif permanente:
@@ -1484,6 +1621,11 @@ def trabalhador(idx=0):
                 if restantes():
                     aviso("⏸️ Downloads pausados. Toque em Continuar para seguir.")
                 time.sleep(1)
+                continue
+            motivo = condicao_bloqueia() if restantes() else ""
+            if motivo:
+                aviso("⏸️ " + motivo)
+                time.sleep(2)
                 continue
             it = pegar()
             if not it:
@@ -1588,7 +1730,159 @@ def estado():
         return out
 
 
-def lista_biblioteca():
+# --------------------------------------------------------------------------- biblioteca: duração, etiquetas, renomear
+DUR_CACHE = {}
+
+
+def duracao_arquivo(p):
+    """Duração em segundos (guardada em memória por arquivo/data/tamanho). 0 se não der para ler."""
+    try:
+        st = os.stat(p)
+        k = (p, st.st_mtime_ns, st.st_size)
+        if k in DUR_CACHE:
+            return DUR_CACHE[k]
+        from mutagen import File as _MF
+        m = _MF(p)
+        v = round(float(m.info.length), 1) if m is not None and getattr(m, "info", None) else 0
+        DUR_CACHE[k] = v
+        return v
+    except Exception:
+        return 0
+
+
+def _limpo(t):
+    t = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", str(t or "")).strip().strip(".")
+    return re.sub(r"\s+", " ", t)[:120]
+
+
+def etiquetas_ler(rel):
+    p = caminho_seguro(rel)
+    if not p or not os.path.isfile(p):
+        return {"erro": "Arquivo não encontrado"}
+    ext = os.path.splitext(p)[1].lower()
+    tit = art = ""
+    ok = ext in (".mp3", ".m4a")
+    try:
+        if ext == ".mp3":
+            from mutagen.id3 import ID3, ID3NoHeaderError
+            try:
+                tg = ID3(p)
+                tit = str(tg.get("TIT2") or "")
+                art = str(tg.get("TPE1") or "")
+            except ID3NoHeaderError:
+                pass
+        elif ext == ".m4a":
+            from mutagen.mp4 import MP4
+            tg = MP4(p)
+            tit = (tg.tags.get("\xa9nam") or [""])[0] if tg.tags else ""
+            art = (tg.tags.get("\xa9ART") or [""])[0] if tg.tags else ""
+    except Exception:
+        pass
+    return {"rel": rel, "titulo": tit or os.path.splitext(os.path.basename(p))[0], "artista": art, "edita": ok,
+            "nome": os.path.splitext(os.path.basename(p))[0]}
+
+
+def etiquetas_gravar(d):
+    """Título, artista e capa (mp3/m4a) e renomeia o arquivo para o novo título."""
+    rel = d.get("rel") or ""
+    p = caminho_seguro(rel)
+    if not p or not os.path.isfile(p):
+        return {"erro": "Arquivo não encontrado"}
+    ext = os.path.splitext(p)[1].lower()
+    if ext not in (".mp3", ".m4a"):
+        return {"erro": "Só dá para editar MP3 e M4A"}
+    titulo = str(d.get("titulo") or "").strip()[:200]
+    artista = str(d.get("artista") or "").strip()[:200]
+    capa = d.get("capa") or ""          # "" = manter, "remover", "data:image/...;base64,..."
+    img = None
+    if capa.startswith("data:image") and "," in capa:
+        import base64
+        try:
+            img = base64.b64decode(capa.split(",", 1)[1])
+        except Exception:
+            img = None
+        if img and (len(img) > 6_000_000 or not _mime_img(img)):
+            return {"erro": "Imagem inválida ou grande demais"}
+    try:
+        if ext == ".mp3":
+            from mutagen.id3 import ID3, ID3NoHeaderError, TIT2, TPE1, APIC
+            try:
+                tg = ID3(p)
+            except ID3NoHeaderError:
+                tg = ID3()
+            if titulo:
+                tg.setall("TIT2", [TIT2(encoding=3, text=titulo)])
+            tg.setall("TPE1", [TPE1(encoding=3, text=artista)] if artista else [])
+            if capa == "remover":
+                tg.delall("APIC")
+            elif img:
+                tg.delall("APIC")
+                tg.add(APIC(encoding=3, mime=_mime_img(img) or "image/jpeg", type=3, desc="Capa", data=img))
+            tg.save(p, v2_version=3)
+        else:
+            from mutagen.mp4 import MP4, MP4Cover
+            tg = MP4(p)
+            if tg.tags is None:
+                tg.add_tags()
+            if titulo:
+                tg.tags["\xa9nam"] = [titulo]
+            if artista:
+                tg.tags["\xa9ART"] = [artista]
+            else:
+                tg.tags.pop("\xa9ART", None)
+            if capa == "remover":
+                tg.tags.pop("covr", None)
+            elif img:
+                fmt = MP4Cover.FORMAT_PNG if img[:4] == b"\x89PNG" else MP4Cover.FORMAT_JPEG
+                tg.tags["covr"] = [MP4Cover(img, imageformat=fmt)]
+            tg.save()
+    except Exception as ex:
+        return {"erro": "Não consegui gravar as etiquetas: " + str(ex)[:120]}
+    novo_rel = rel
+    base = _limpo(titulo)
+    if base and base != os.path.splitext(os.path.basename(p))[0]:
+        pasta = os.path.dirname(p)
+        alvo = os.path.join(pasta, base + ext)
+        n = 2
+        while os.path.exists(alvo) and os.path.realpath(alvo) != os.path.realpath(p):
+            alvo = os.path.join(pasta, "%s (%d)%s" % (base, n, ext))
+            n += 1
+        try:
+            os.rename(p, alvo)
+            _trocar_caminho(p, alvo)
+            novo_rel = os.path.relpath(alvo, os.path.realpath(raiz()))
+        except OSError as ex:
+            return {"erro": "Gravei as etiquetas, mas não consegui renomear: " + str(ex)[:100], "rel": rel}
+    try:
+        c = _cache_capa(p)
+        if os.path.isfile(c):
+            os.remove(c)
+        CAPA_NEG.pop(p, None)
+    except Exception:
+        pass
+    NOMES["k"] = None
+    return {"ok": True, "rel": novo_rel, "nome": os.path.splitext(os.path.basename(novo_rel))[0]}
+
+
+def _trocar_caminho(velho, novo):
+    """Depois de renomear, o registro de vídeos baixados passa a apontar para o novo nome."""
+    rv, rn = os.path.realpath(velho), os.path.realpath(novo)
+    with LOCK:
+        for d in INDEX.values():
+            for k, v in list(d.items()):
+                if isinstance(v, str):
+                    if os.path.realpath(v) == rv:
+                        d[k] = novo
+                elif isinstance(v, list):
+                    d[k] = [novo if os.path.realpath(x) == rv else x for x in v]
+        REV.clear()
+        try:
+            _gravar(INDEX_FILE, INDEX)
+        except OSError:
+            pass
+
+
+def lista_biblioteca(com_dur=False):
     r = raiz()
     out = {"musicas": [], "playlists": [], "videos": []}
     playlists_map = {}
@@ -1603,7 +1897,13 @@ def lista_biblioteca():
         ext = os.path.splitext(c)[1].lower()
         nome_arq = os.path.splitext(os.path.basename(c))[0]
         
-        item = {"rel": rel, "nome": nome_arq, "pasta": "" if p == "." else p, "tam": tam}
+        try:
+            mt = int(os.path.getmtime(c))
+        except OSError:
+            mt = 0
+        item = {"rel": rel, "nome": nome_arq, "pasta": "" if p == "." else p, "tam": tam, "mt": mt}
+        if com_dur:
+            item["dur"] = duracao_arquivo(c)
         
         if ext in VIDEO_EXTS:
             if p and p != ".":
@@ -1883,7 +2183,9 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/config":
                 return self._json(cfg_publica())
             if p == "/api/arquivos":
-                return self._json(lista_biblioteca())
+                return self._json(lista_biblioteca((q.get("dur") or [""])[0] == "1"))
+            if p == "/api/etiqueta":
+                return self._json(etiquetas_ler((q.get("rel") or [""])[0]))
             if p == "/api/buscar":
                 termo = (q.get("q") or [""])[0].strip()[:100]
                 if len(termo) < 3:
@@ -1958,6 +2260,8 @@ class H(BaseHTTPRequestHandler):
                 return self._json(aplicar_cfg(d))
             if p == "/api/apagar":
                 return self._json(apagar(d.get("rels") or []))
+            if p == "/api/etiqueta":
+                return self._json(etiquetas_gravar(d))
             if p == "/api/novapasta":
                 return self._json(nova_pasta(d.get("pai", ""), d.get("nome", "")))
             if p == "/api/repetidas":
@@ -2442,7 +2746,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
     <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="videos">Vídeos</button></div>
     <span class="sm mut" id="libinfo"></span>
   </div>
-  <div id="m-todas" style="margin-top:12px"><input type="text" id="lf" placeholder="Filtrar músicas..."><label id="wrapvid" hidden style="display:flex;gap:8px;align-items:center;margin:6px 0 10px;cursor:pointer;font-size:14px"><input type="checkbox" id="chkvid" style="width:18px;height:18px"> Mostrar vídeos <span class="sm mut">(prioriza músicas)</span></label><div id="lib"></div></div>
+  <div id="m-todas" style="margin-top:12px"><input type="text" id="lf" placeholder="Filtrar músicas..."><select id="lsort" aria-label="Ordenar" style="margin-top:8px;width:100%;padding:10px 12px;border-radius:12px;background:var(--sf);color:var(--fg);border:1px solid var(--ln);font:inherit"><option value="pad">Ordem: padrão</option><option value="rec">Mais recentes primeiro</option><option value="ant">Mais antigas primeiro</option><option value="az">Nome A–Z</option><option value="za">Nome Z–A</option><option value="dmax">Mais longas primeiro</option><option value="dmin">Mais curtas primeiro</option><option value="tmax">Maiores primeiro</option><option value="tmin">Menores primeiro</option></select><label id="wrapvid" hidden style="display:flex;gap:8px;align-items:center;margin:6px 0 10px;cursor:pointer;font-size:14px"><input type="checkbox" id="chkvid" style="width:18px;height:18px"> Mostrar vídeos <span class="sm mut">(prioriza músicas)</span></label><div id="lib"></div></div>
   <div id="m-videos" style="margin-top:12px" hidden><input type="text" id="lfv" placeholder="Filtrar vídeos..."><div id="libv"></div></div>
   <div id="m-rep" style="margin-top:12px" hidden>
     <p class="sm mut">Procura cópias exatas e faixas parecidas na pasta atual para otimizar espaço.</p>
@@ -2451,7 +2755,14 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 </section>
 </div>
 
-<div class="sel" id="libbar" hidden><span id="selc"></span><span><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bdel">Apagar</button></span></div>
+<div id="edm" style="display:none;position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.6);align-items:flex-end;justify-content:center"><div style="width:100%;max-width:560px;max-height:92vh;overflow:auto;background:var(--cd);color:var(--fg);border:1px solid var(--ln);border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))">
+<h2 style="margin:0 0 4px">Editar música</h2><div class="sm mut" id="edaviso" style="margin-bottom:10px">O nome do arquivo muda junto com o título.</div>
+<label class="sm mut">Título</label><input type="text" id="edt" maxlength="200" style="width:100%;margin:4px 0 10px">
+<label class="sm mut">Artista</label><input type="text" id="eda" maxlength="200" style="width:100%;margin:4px 0 10px">
+<label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
+<input type="file" id="edfile" accept="image/*" hidden>
+<div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
+<div class="sel" id="libbar" hidden><span id="selc"></span><span><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bedit" hidden>Editar</button><button id="bdel">Apagar</button></span></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -2516,7 +2827,7 @@ const I={
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${I[n]}</svg>`;
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
 const WAVE='<svg viewBox="0 0 76 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="70" height="42" rx="6"/><rect x="11" y="9" width="54" height="14" rx="2"/><rect x="20" y="28" width="36" height="11" rx="5.5"/><circle cx="29" cy="33.5" r="2.6"/><circle cx="47" cy="33.5" r="2.6"/></svg>';
-const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}" alt="" onerror="this.style.display='none'"></span>`;
+const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}&v=${CAPAV.v}" alt="" onerror="this.style.display='none'"></span>`;
 let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,READY=[],LST=[],LR={dup:0,fora:0},PVN=5,PVT,QVN=5,ABAF='fila';
 async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'wavefly'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok||j.erro)throw new Error(j.erro||('Erro '+r.status));return j}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(TT);TT=setTimeout(()=>t.classList.remove('on'),Math.min(4500,1700+m.length*28))}
@@ -2713,11 +3024,37 @@ async function receberZip(rels){if(!rels.length)return;try{toast('Compactando ar
 $('#bsolto').onclick=()=>receberSoltos(READY);$('#bzipq').onclick=()=>receberZip(READY);
 $('#bdl').onclick=()=>receberSoltos([...SEL]);$('#bzip').onclick=()=>receberZip([...SEL]);
 
-async function loadLib(){try{const d=await api('/api/arquivos');LIB=d;let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
+/* ---- editar título, artista e capa (MP3 e M4A) ---- */
+let EDREL='',EDCAPA='';
+function edFecha(){$('#edm').style.display='none';EDREL='';EDCAPA=''}
+async function edAbre(){
+ const rel=[...SEL][0];if(!rel)return;
+ let d;try{d=await api('/api/etiqueta?rel='+encodeURIComponent(rel))}catch(e){toast(e.message||'Não consegui abrir a música.');return}
+ if(!d.edita){toast('Só dá para editar MP3 e M4A.');return}
+ EDREL=rel;EDCAPA='';$('#edt').value=d.titulo||'';$('#eda').value=d.artista||'';
+ $('#edimg').src='/api/capa?f='+encodeURIComponent(rel)+'&v='+(++CAPAV.v);$('#edimg').style.visibility='visible';
+ $('#edm').style.display='flex'}
+$('#bedit').onclick=edAbre;
+$('#edcancela').onclick=edFecha;
+$('#edm').addEventListener('click',e=>{if(e.target.id==='edm')edFecha()});
+$('#edremove').onclick=()=>{EDCAPA='remover';$('#edimg').style.visibility='hidden'};
+$('#edescolhe').onclick=()=>$('#edfile').click();
+$('#edfile').onchange=e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+ const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const m=600,k=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);EDCAPA=c.toDataURL('image/jpeg',0.9);$('#edimg').src=EDCAPA;$('#edimg').style.visibility='visible'};im.onerror=()=>toast('Imagem inválida.');im.src=fr.result};fr.readAsDataURL(f)};
+$('#edsalva').onclick=async()=>{
+ const t=$('#edt').value.trim();if(!t){toast('Escreva o título.');return}
+ $('#edsalva').disabled=true;
+ try{const r=await api('/api/etiqueta',{rel:EDREL,titulo:t,artista:$('#eda').value.trim(),capa:EDCAPA});
+  SEL.clear();if(r.rel)SEL.add(r.rel);CAPAV.v++;toast('Música atualizada.');edFecha();await loadLib()}
+ catch(e){toast(e.message||'Não consegui salvar.')}
+ $('#edsalva').disabled=false};
+
+async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIB.durok=/^d/.test(LORD);let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
  $('#bsa').hidden=!(LIBQ&&LIBQ.length>SEL.size);
+ $('#bedit').hidden=SEL.size!==1;
  $('#selc').textContent=SEL.size?(SEL.size+(SEL.size>1?' selecionados':' selecionado')):'';
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
@@ -2728,20 +3065,30 @@ let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro'
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
 
 let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBIO=null;
+let LORD='pad';try{LORD=localStorage.getItem('wf_ord')||'pad'}catch(e){}
+const CAPAV={v:0};
+function ordena(arr){
+ if(LORD==='pad')return arr;
+ const c=[...arr],cmp={rec:(a,b)=>(b.mt||0)-(a.mt||0),ant:(a,b)=>(a.mt||0)-(b.mt||0),az:(a,b)=>a.nome.localeCompare(b.nome,'pt',{sensitivity:'base',numeric:true}),za:(a,b)=>b.nome.localeCompare(a.nome,'pt',{sensitivity:'base',numeric:true}),dmax:(a,b)=>(b.dur||0)-(a.dur||0),dmin:(a,b)=>(a.dur||0)-(b.dur||0),tmax:(a,b)=>(b.tam||0)-(a.tam||0),tmin:(a,b)=>(a.tam||0)-(b.tam||0)}[LORD];
+ return cmp?c.sort(cmp):arr}
+
+$('#lsort').value=LORD;
+$('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('wf_ord',LORD)}catch(e){}if(/^d/.test(LORD)&&!LIB.durok)await loadLib();else dlib()};
 function dlib(){
  $('#wrapvid').hidden=!(ACTIVE_PL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
  const f=$('#lf').value.trim().toLowerCase();
  const fv=$('#lfv').value.trim().toLowerCase();
  
- let mus = LIB.musicas || [];
+ const ITP=ACTIVE_PL?ordena(ACTIVE_PL.itens):[];
+ let mus = ordena(LIB.musicas || []);
  if(f) mus = mus.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(f));
  
  let pls = LIB.playlists || [];
  let hPls = '';
  if(ACTIVE_PL){
   hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div>` +
-   (LIBQ=(PL_FILTRO_VID ? [...ACTIVE_PL.itens].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ACTIVE_PL.itens.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
-    (PL_FILTRO_VID ? [...ACTIVE_PL.itens].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ACTIVE_PL.itens.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
+   (LIBQ=(PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
+    (PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
@@ -2755,7 +3102,7 @@ function dlib(){
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
  $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p></div>`;
 
- let vids = LIB.videos || [];
+ let vids = ordena(LIB.videos || []);
  if(fv) vids = vids.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(fv));
  LIBQV=vids.map(x=>x.rel);
  $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p></div>`;

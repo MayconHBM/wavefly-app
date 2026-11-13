@@ -33,6 +33,22 @@ import androidx.appcompat.app.AppCompatActivity;
 
 /** Tela do app: mostra a interface do WaveFly em tela cheia (sem barra de navegador). */
 public class MainActivity extends AppCompatActivity {
+    private android.webkit.ValueCallback<android.net.Uri[]> arquivoCb;
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        if (req == 4711) {
+            if (arquivoCb != null) {
+                android.net.Uri[] r = null;
+                if (res == RESULT_OK && data != null && data.getData() != null) r = new android.net.Uri[]{data.getData()};
+                arquivoCb.onReceiveValue(r);
+                arquivoCb = null;
+            }
+            return;
+        }
+        super.onActivityResult(req, res, data);
+    }
+
     private static final String HOME = "http://127.0.0.1:" + PythonService.PORT + "/";
 
     private WebView web;
@@ -109,6 +125,23 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView v, android.webkit.ValueCallback<android.net.Uri[]> cb, FileChooserParams p) {
+                if (arquivoCb != null) arquivoCb.onReceiveValue(null);
+                arquivoCb = cb;
+                try {
+                    Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("image/*");
+                    startActivityForResult(Intent.createChooser(i, "Imagem"), 4711);
+                    return true;
+                } catch (Throwable t) {
+                    arquivoCb = null;
+                    cb.onReceiveValue(null);
+                    return false;
+                }
+            }
+
             @Override
             public boolean onJsAlert(WebView v, String url, String msg, final JsResult r) {
                 new AlertDialog.Builder(MainActivity.this).setMessage(msg)

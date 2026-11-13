@@ -178,6 +178,36 @@ JS = r"""<script id="wf-android-js">
   var bx=document.getElementById('plx');
   if(bx)bx.addEventListener('click',function(){setTimeout(window.wfRep,50)});
 
+
+  /* ---- ⏮ volta ao início se a música passou de 3 s; senão vai para a anterior ---- */
+  try{var px=proxima;proxima=function(d){var a=aud();if(d<0&&a&&(a.currentTime||0)>3){a.currentTime=0;try{posLimpa(CUR)}catch(e){}setTimeout(window.wfRep,200);return}return px.apply(this,arguments)}}catch(e){}
+
+  /* ---- passo dos botões ±N s (10, 15 ou 30) também dentro do app ---- */
+  function passoApp(){var n=0;try{n=parseInt((window.WF&&WF.pref)?WF.pref('passo'):'10',10)}catch(e){}return(n===15||n===30)?n:10}
+  var brw=document.getElementById('brew'),bfw=document.getElementById('bff');
+  if(brw)brw.addEventListener('click',function(ev){ev.stopImmediatePropagation();var a=aud();if(a)a.currentTime=Math.max(0,a.currentTime-passoApp())},true);
+  if(bfw)bfw.addEventListener('click',function(ev){ev.stopImmediatePropagation();var a=aud();if(a&&isFinite(a.duration))a.currentTime=Math.min(a.duration-0.2,a.currentTime+passoApp())},true);
+  function rotuloPasso(){var n=passoApp();if(brw)brw.setAttribute('aria-label','Voltar '+n+' segundos');if(bfw)bfw.setAttribute('aria-label','Avançar '+n+' segundos')}
+  rotuloPasso();setInterval(rotuloPasso,5000);
+
+  /* ---- lembrar a posição em faixas longas (10 min ou mais) ---- */
+  var POSK='wf_pos';
+  function posLer(){try{return JSON.parse(localStorage.getItem(POSK)||'{}')}catch(e){return{}}}
+  function posGravar(o){try{var k=Object.keys(o);if(k.length>150){k.sort(function(x,y){return(o[x].ts||0)-(o[y].ts||0)}).slice(0,k.length-150).forEach(function(z){delete o[z]})}localStorage.setItem(POSK,JSON.stringify(o))}catch(e){}}
+  window.posLimpa=function(rel){if(!rel)return;var o=posLer();if(o[rel]){delete o[rel];posGravar(o)}};
+  var posUlt=0;
+  document.addEventListener('timeupdate',function(){
+    try{var a=aud();if(!a||typeof CUR==='undefined'||!CUR||!isFinite(a.duration)||a.duration<600)return;
+      var n=Date.now();if(n-posUlt<5000)return;posUlt=n;
+      var t=a.currentTime||0;if(t<30||t>a.duration-30)return;
+      var o=posLer();o[CUR]={t:Math.floor(t),d:Math.floor(a.duration),ts:n};posGravar(o)}catch(e){}},true);
+  document.addEventListener('ended',function(){try{posLimpa(CUR)}catch(e){}},true);
+  document.addEventListener('loadedmetadata',function(){
+    try{var a=aud();if(!a||typeof CUR==='undefined'||!CUR||!isFinite(a.duration)||a.duration<600)return;
+      var o=posLer(),s=o[CUR];if(!s||s.t<30||s.t>a.duration-30)return;
+      a.currentTime=s.t;var m=Math.floor(s.t/60),sg=s.t%60;
+      toast('Continuando de '+m+':'+(sg<10?'0':'')+sg+' · ⏮ para recomeçar')}catch(e){}},true);
+
   /* comandos vindos da notificação */
   window.wfCmd=function(c){
     try{
@@ -297,6 +327,10 @@ def rotas(w):
                     if any((q.get(k) or [""])[0] for k in ("rede", "conv")):
                         g = lambda k: (q.get(k) or [""])[0]
                         w.definir_ajustes(int(g("rede")) if g("rede") else None, int(g("conv")) if g("conv") else None)
+                    if any((q.get(k) or [""])[0] != "" for k in ("wifi", "carga", "batmin")):
+                        g2 = lambda k: (q.get(k) or [""])[0]
+                        w.definir_condicoes(g2("wifi") == "1" if g2("wifi") != "" else None, g2("carga") == "1" if g2("carga") != "" else None,
+                                            int(g2("batmin")) if g2("batmin").isdigit() else None)
                     if (q.get("longas") or [""])[0].isdigit():
                         w.definir_longas(int(q["longas"][0]))
                     if (q.get("limpar") or [""])[0]:

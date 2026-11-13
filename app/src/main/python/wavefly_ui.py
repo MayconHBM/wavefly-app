@@ -164,7 +164,7 @@ DICT = [
     ("Pausar tudo", "Pause all", "Pausar todo"), ("Continuar", "Resume", "Continuar"),
     ("Downloads pausados.", "Downloads paused.", "Descargas en pausa."), ("Registro copiado", "Log copied", "Registro copiado"),
     ("Informações", "Info", "Información"), ("Conversão", "Conversion", "Conversión"), ("Espera", "Wait", "Espera"),
-    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Link inválido · não dá para baixar", "Invalid link · can't be downloaded", "Enlace no válido · no se puede descargar"), ("Vídeo inexistente ou indisponível · não dá para baixar", "Video doesn't exist or is unavailable · can't be downloaded", "El video no existe o no está disponible · no se puede descargar"), ("Relatório copiado", "Report copied", "Informe copiado"), ("Limpar o registro? Isso não pode ser desfeito.", "Clear the log? This can't be undone.", "¿Borrar el registro? No se puede deshacer."), ("Escreva uma mensagem antes de enviar", "Write a message before sending", "Escribe un mensaje antes de enviar"), ("Não achei um app de e-mail. Texto copiado: envie para contato.wavefly@gmail.com", "No email app found. Text copied: send it to contato.wavefly@gmail.com", "No encontré una app de correo. Texto copiado: envíalo a contato.wavefly@gmail.com"), ("Problemas ou sugestões?", "Problems or suggestions?", "¿Problemas o sugerencias?"), ("Escreva aqui o que aconteceu ou o que você gostaria de ver. Vamos olhar.", "Write here what happened or what you would like to see. We will take a look.", "Escribe aquí lo que pasó o lo que te gustaría ver. Lo revisaremos."), ("Incluir informações técnicas (versão, aparelho e últimos eventos)", "Include technical info (version, device and latest events)", "Incluir información técnica (versión, dispositivo y últimos eventos)"), ("Escreva aqui…", "Write here…", "Escribe aquí…"), ("Copiar tudo", "Copy all", "Copiar todo"), ("Enviar", "Send", "Enviar"), ("Sempre", "Always", "Siempre"), ("Músicas longas", "Long songs", "Canciones largas"), ("Baixar até (minutos)", "Download up to (minutes)", "Descargar hasta (minutos)"), ("Músicas em MP3 acima do limite (com 3 minutos de margem) são puladas e aparecem como “Longa demais”. “Sempre” baixa qualquer duração. As curtas são baixadas primeiro.", "MP3 songs above the limit (with a 3-minute margin) are skipped and shown as “Too long”. “Always” downloads any length. Short ones are downloaded first.", "Las canciones MP3 por encima del límite (con 3 minutos de margen) se omiten y aparecen como “Demasiado larga”. “Siempre” descarga cualquier duración. Las cortas se descargan primero."), ("Mediana (total)", "Median (total)", "Mediana (total)"), ("Mediana (conversão)", "Median (conversion)", "Mediana (conversión)"), ("Amostra", "Sample", "Muestra"),
+    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Link inválido · não dá para baixar", "Invalid link · can't be downloaded", "Enlace no válido · no se puede descargar"), ("Vídeo inexistente ou indisponível · não dá para baixar", "Video doesn't exist or is unavailable · can't be downloaded", "El video no existe o no está disponible · no se puede descargar"), ("Relatório copiado", "Report copied", "Informe copiado"), ("Limpar o registro? Isso não pode ser desfeito.", "Clear the log? This can't be undone.", "¿Borrar el registro? No se puede deshacer."), ("Escreva uma mensagem antes de enviar", "Write a message before sending", "Escribe un mensaje antes de enviar"), ("Não achei um app de e-mail. Texto copiado: envie para contato.wavefly@gmail.com", "No email app found. Text copied: send it to contato.wavefly@gmail.com", "No encontré una app de correo. Texto copiado: envíalo a contato.wavefly@gmail.com"), ("Problemas ou sugestões?", "Problems or suggestions?", "¿Problemas o sugerencias?"), ("Escreva aqui o que aconteceu ou o que você gostaria de ver. Vamos olhar.", "Write here what happened or what you would like to see. We will take a look.", "Escribe aquí lo que pasó o lo que te gustaría ver. Lo revisaremos."), ("Incluir informações técnicas (versão, aparelho e últimos eventos)", "Include technical info (version, device and latest events)", "Incluir información técnica (versión, dispositivo y últimos eventos)"), ("Escreva aqui…", "Write here…", "Escribe aquí…"), ("Copiar tudo", "Copy all", "Copiar todo"), ("Enviar", "Send", "Enviar"), ("Sempre", "Always", "Siempre"), ("Músicas longas", "Long songs", "Canciones largas"), ("Baixar até (minutos)", "Download up to (minutes)", "Descargar hasta (minutos)"), ("Músicas em MP3 acima do limite (com 3 minutos de margem) são puladas e aparecem como “Longa demais”. “Sempre” baixa qualquer duração. As curtas são baixadas primeiro.", "MP3 songs above the limit (with a 3-minute margin) are skipped and shown as “Too long”. “Always” downloads any length. Short ones are downloaded first.", "Las canciones MP3 por encima del límite (con 3 minutos de margen) se omiten y aparecen como “Demasiado larga”. “Siempre” descarga cualquier duración. Las cortas se descargan primero."), ("Economia", "Economy", "Economía"), ("Equilibrado", "Balanced", "Equilibrado"), ("Máximo", "Maximum", "Máximo"), ("Predefinições", "Presets", "Preajustes"), ("Condições para baixar", "Download conditions", "Condiciones para descargar"), ("Só no Wi-Fi", "Wi-Fi only", "Solo con Wi-Fi"), ("Só carregando", "Only while charging", "Solo cargando"), ("Bateria mínima", "Minimum battery", "Batería mínima"), ("Desl.", "Off", "Apag."), ("Se uma condição não for atendida, o app não inicia novas músicas e avisa o motivo; o que já está baixando termina. Volta sozinho quando a condição for atendida. Com o carregador conectado, a bateria mínima não vale. Bateria mínima 0% = desligada.", "If a condition isn't met, the app doesn't start new songs and tells you why; what is already downloading finishes. It resumes by itself when the condition is met. With the charger connected, the minimum battery doesn't apply. Minimum battery 0% = off.", "Si no se cumple una condición, la app no inicia canciones nuevas y avisa el motivo; lo que ya se está descargando termina. Continúa solo cuando se cumpla. Con el cargador conectado, la batería mínima no se aplica. Batería mínima 0% = desactivada."), ("Aguardando Wi-Fi…", "Waiting for Wi-Fi…", "Esperando Wi-Fi…"), ("Aguardando o carregador…", "Waiting for the charger…", "Esperando el cargador…"), ("Último lote", "Last batch", "Último lote"), ("Fila (detalhe)", "Queue (details)", "Cola (detalle)"), ("Temperatura", "Temperature", "Temperatura"), ("térmico", "thermal", "térmico"), ("Duração", "Duration", "Duración"), ("Estado térmico (máx.)", "Thermal state (max)", "Estado térmico (máx.)"), ("Configuração", "Setting", "Configuración"), ("rápido", "fast", "rápido"), ("normal", "normal", "normal"), ("Sem lotes ainda.", "No batches yet.", "Aún no hay lotes."), ("Fila vazia.", "Queue empty.", "Cola vacía."), ("Player e notificação", "Player and notification", "Reproductor y notificación"), ("Pulo dos botões (segundos)", "Button skip (seconds)", "Salto de los botones (segundos)"), ("Capa na notificação", "Cover in notification", "Portada en la notificación"), ("Esquerda", "Left", "Izquierda"), ("Direita", "Right", "Derecha"), ("Ao fundo", "Background", "De fondo"), ("⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.", "⏮ restarts the song if it is past 3 seconds; a second tap goes to the previous one. Songs of 10 minutes or more resume where they stopped.", "⏮ reinicia la canción si pasaron más de 3 segundos; un segundo toque va a la anterior. Las canciones de 10 minutos o más continúan donde se detuvieron."), ("Ordem: padrão", "Order: default", "Orden: predeterminado"), ("Mais recentes primeiro", "Newest first", "Más recientes primero"), ("Mais antigas primeiro", "Oldest first", "Más antiguas primero"), ("Nome A–Z", "Name A–Z", "Nombre A–Z"), ("Nome Z–A", "Name Z–A", "Nombre Z–A"), ("Mais longas primeiro", "Longest first", "Más largas primero"), ("Mais curtas primeiro", "Shortest first", "Más cortas primero"), ("Maiores primeiro", "Largest first", "Más grandes primero"), ("Menores primeiro", "Smallest first", "Más pequeños primero"), ("Editar", "Edit", "Editar"), ("Editar música", "Edit song", "Editar canción"), ("O nome do arquivo muda junto com o título.", "The file name changes along with the title.", "El nombre del archivo cambia junto con el título."), ("Título", "Title", "Título"), ("Artista", "Artist", "Artista"), ("Capa", "Cover", "Portada"), ("Escolher imagem", "Choose image", "Elegir imagen"), ("Remover capa", "Remove cover", "Quitar portada"), ("Salvar", "Save", "Guardar"), ("Música atualizada.", "Song updated.", "Canción actualizada."), ("Escreva o título.", "Write the title.", "Escribe el título."), ("Só dá para editar MP3 e M4A.", "Only MP3 and M4A can be edited.", "Solo se pueden editar MP3 y M4A."), ("Mediana (total)", "Median (total)", "Mediana (total)"), ("Mediana (conversão)", "Median (conversion)", "Mediana (conversión)"), ("Amostra", "Sample", "Muestra"),
     ("Sem medidas ainda. Baixe algumas músicas.", "No measurements yet. Download a few songs.", "Aún sin mediciones. Descarga algunas canciones."),
     ("Falhas", "Failures", "Fallos"), ("Bateria", "Battery", "Batería"), ("Memória do app", "App memory", "Memoria de la app"),
     ("Rede", "Network", "Red"), ("Sem eventos.", "No events.", "Sin eventos."), ("Desenvolvedor", "Developer", "Desarrollador"),
@@ -246,6 +246,11 @@ html[lang="es"] body .tabs a{font-size:13px;letter-spacing:-.2px}
 #wfdev .wfrow .wfsw{align-self:flex-start}
 #wfdev .wfseg{display:flex;gap:6px;width:100%}
 #wfdev .wfseg button{flex:1;height:38px;border-radius:10px;border:2px solid var(--ln)!important;background:var(--sf)!important;color:var(--fg)!important;font-weight:800;box-shadow:none!important}
+#wfdev .wfstep{display:flex;align-items:center;gap:10px}
+#wfdev .wfstep button{width:38px;height:38px;border-radius:10px;border:2px solid var(--ln)!important;background:var(--sf)!important;color:var(--fg)!important;font-weight:800;font-size:20px;box-shadow:none!important}
+#wfdev .wfstep b{min-width:48px;text-align:center;color:var(--fg)}
+#wfdev .wfq{font-size:12px;line-height:1.5;color:var(--fg);overflow-x:auto}
+#wfdev .wfq div{border-bottom:1px solid var(--ln);padding:4px 0}
 #wfdev .wfseg.wrap{flex-wrap:wrap}
 #wfdev .wfseg.wrap button{flex:1 1 20%;min-width:56px}
 #wfdev .wfseg button.on{background:#d9692a!important;border-color:#d9692a!important;color:#fff!important}
@@ -340,7 +345,7 @@ function setLang(l){
 /* ---------- Ajustes: idioma e atualizações ---------- */
 function mk(h){var d=document.createElement('div');d.innerHTML=h;return d.firstChild}
 var pn=document.querySelector('#sheet .spn'),ref=document.getElementById('srvnote');
-var DEVON=false;try{DEVON=wfget('dev')==='1'}catch(e){}
+var DEVON=true;
 function info(){fetch('/api/ytdlp').then(function(r){return r.json()}).then(function(j){
   var a=W&&W.versaoApp?W.versaoApp():'';
   var el=document.getElementById('wfv2');if(el)el.textContent='WaveFly '+(a?('v'+a):'')+' · yt-dlp '+(j.versao||'?')}).catch(function(){})}
@@ -349,7 +354,7 @@ if(pn){
     NAT.map(function(n){return '<button data-wflang="'+n[0]+'">'+n[1]+'</button>'}).join('')+'</div></div>');
   pn.insertBefore(g1,ref);
   g1.querySelectorAll('button').forEach(function(b){b.onclick=function(){setLang(b.dataset.wflang)};b.classList.toggle('on',b.dataset.wflang===LANG)});
-  var g3=mk('<div class="g" id="wf-g-up"><span class="l">Atualizações</span><button class="rb" id="wfup"><span>Procurar atualizações</span></button><p class="wfver" id="wfv2"></p><div id="wfdevg" hidden><span class="l" style="margin-top:12px;display:block">Desenvolvedor</span><button class="rb" id="wfdevopen"><span>Painel do desenvolvedor</span></button><button class="t" id="wfdevoff" style="margin-top:4px">Esconder</button></div></div>');
+  var g3=mk('<div class="g" id="wf-g-up"><span class="l">Atualizações</span><button class="rb" id="wfup"><span>Procurar atualizações</span></button><p class="wfver" id="wfv2"></p><div id="wfdevg"><span class="l" style="margin-top:12px;display:block">Desenvolvedor</span><button class="rb" id="wfdevopen"><span>Painel do desenvolvedor</span></button></div></div>');
   pn.insertBefore(g3,ref);
   g3.querySelector('#wfup').onclick=function(){
     if(W&&W.verificarAtualizacao)W.verificarAtualizacao();
@@ -360,12 +365,6 @@ if(pn){
       else toast(LANG==='en'?'yt-dlp is up to date.':LANG==='es'?'yt-dlp está al día.':'yt-dlp está em dia.');
       info()}).catch(function(){})};
   info();
-  /* 7 toques na linha de versão abrem o modo desenvolvedor */
-  var tq=0,tt=0,vl=g3.querySelector('#wfv2'),dg=g3.querySelector('#wfdevg');
-  dg.hidden=!DEVON;
-  vl.addEventListener('click',function(){var n=Date.now();if(n-tt>1500)tq=0;tt=n;tq++;
-    if(tq>=7){tq=0;DEVON=true;wfset('dev','1');dg.hidden=false;toast(LANG==='en'?'Developer mode on':LANG==='es'?'Modo desarrollador activado':'Modo desenvolvedor ativado')}});
-  g3.querySelector('#wfdevoff').onclick=function(){DEVON=false;wfset('dev','');dg.hidden=true};
   g3.querySelector('#wfdevopen').onclick=function(){devAbrir()};
 }
 
@@ -387,18 +386,29 @@ var PAUSADO=false;
 
 /* ---------- Painel do desenvolvedor ---------- */
 var DEVT=null;
-function aplicaRapido(){try{var q='/api/dev?rede='+Math.min(5,wfget('dev_rede4')||4)+'&conv='+Math.min(5,wfget('dev_conv4')||4)+'&longas='+(wfget('dev_longas')===''||wfget('dev_longas')==null?30:wfget('dev_longas'));fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
+function aplicaRapido(){try{var q='/api/dev?rede='+Math.min(5,wfget('dev_rede4')||4)+'&conv='+Math.min(5,wfget('dev_conv4')||4)+'&longas='+(wfget('dev_longas2')===''||wfget('dev_longas2')==null?0:wfget('dev_longas2'))+'&wifi='+(wfget('dev_wifi')==='1'?1:0)+'&carga='+(wfget('dev_carga')==='1'?1:0)+'&batmin='+(wfget('dev_batmin')===''||wfget('dev_batmin')==null?20:wfget('dev_batmin'));fetch(q).then(function(){if(wfget('dev_rapido')==='1')fetch('/api/dev?rapido=1')})}catch(e){}}
 aplicaRapido();
 function devAbrir(){
   if(document.getElementById('wfdev'))return;
   var d=mk('<div id="wfdev"><div class="wfbar"><h2>Desenvolvedor</h2><button class="t" id="wfdx">Fechar</button></div>'+
     '<div class="wfcx"><div class="wfrow"><span class="wft">Download mais rápido</span><label class="wfsw"><input type="checkbox" id="wfrap"><i></i></label></div>'+
     '<p class="note" id="wfmodo"></p><p class="note">Vale para downloads em MP3: baixa e converte várias músicas ao mesmo tempo (você escolhe quantas), com esperas curtas, e grava título e capa direto no arquivo. Se o YouTube bloquear, volta sozinho ao ritmo normal.</p></div>'+
+    '<div class="wfcx"><h3>Predefinições</h3><div class="wfseg" id="wfpre"></div><div class="note" id="wfpred"></div></div>'+
     '<div class="wfcx"><h3>Ajustes do modo rápido</h3>'+
     '<div class="wfrow"><span class="wft">Downloads ao mesmo tempo</span><span class="wfseg" id="wfsr"></span></div>'+
     '<div class="wfrow"><span class="wft">Conversões ao mesmo tempo</span><span class="wfseg" id="wfsc"></span></div>'+
     '<p class="note">Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal.</p><div class="note" id="wfdica"></div></div>'+
+    '<div class="wfcx"><h3>Player e notificação</h3><div class="wfrow"><span class="wft">Pulo dos botões (segundos)</span></div><span class="wfseg" id="wfps"></span>'+
+    '<div class="wfrow" style="margin-top:10px"><span class="wft">Capa na notificação</span></div><span class="wfseg" id="wfcp2"></span>'+
+    '<p class="note">⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.</p></div>'+
+    '<div class="wfcx"><h3>Condições para baixar</h3>'+
+    '<div class="wfrow"><span class="wft">Só no Wi-Fi</span><label class="wfsw"><input type="checkbox" id="wfcw"><i></i></label></div>'+
+    '<div class="wfrow"><span class="wft">Só carregando</span><label class="wfsw"><input type="checkbox" id="wfcc"><i></i></label></div>'+
+    '<div class="wfrow"><span class="wft">Bateria mínima</span><span class="wfstep"><button type="button" id="wfbm">−</button><b id="wfbv"></b><button type="button" id="wfbp">+</button></span></div>'+
+    '<p class="note">Se uma condição não for atendida, o app não inicia novas músicas e avisa o motivo; o que já está baixando termina. Volta sozinho quando a condição for atendida. Com o carregador conectado, a bateria mínima não vale. Bateria mínima 0% = desligada.</p><p class="note" id="wfcb"></p></div>'+
     '<div class="wfcx"><h3>Músicas longas</h3><div class="wfrow"><span class="wft">Baixar até (minutos)</span></div><span class="wfseg wrap" id="wfsl"></span><p class="note">Músicas em MP3 acima do limite (com 3 minutos de margem) são puladas e aparecem como “Longa demais”. “Sempre” baixa qualquer duração. As curtas são baixadas primeiro.</p></div>'+
+    '<div class="wfcx"><h3>Último lote</h3><table id="wflo"></table></div>'+
+    '<div class="wfcx"><h3>Fila (detalhe)</h3><div class="wfq" id="wffi"></div></div>'+
     '<div class="wfcx"><h3>Tempo médio por música</h3><table id="wftb"></table></div>'+
     '<div class="wfcx"><h3>Contagem</h3><table id="wfct"></table></div>'+
     '<div class="wfcx"><h3>Aparelho</h3><table id="wfap"></table></div>'+
@@ -415,9 +425,32 @@ function devAbrir(){
     en:[['2','Light: less heat and battery use, about half the speed. Good on low battery.'],['3','Balanced: good gain without much heat.'],['4','Recommended: best balance. In tests, 30 songs (including long tracks) in about 13 min.'],['5','Maximum: only worth it with short songs. With long tracks conversion is limited by the processor, it runs hotter and YouTube may block more easily.']],
     es:[['2','Ligero: menos calor y batería, cerca de la mitad de velocidad. Bueno con batería baja.'],['3','Equilibrado: buena mejora sin calentar mucho.'],['4','Recomendado: mejor equilibrio. En pruebas, 30 canciones (con pistas largas) en unos 13 min.'],['5','Máximo: solo vale con canciones cortas. Con pistas largas la conversión la limita el procesador, calienta más y YouTube puede bloquear más fácil.']]};
     var el=d.querySelector('#wfdica');el.innerHTML=(DC[LANG]||DC.pt).map(function(x){return '<div><b>'+x[0]+'</b> — '+x[1]+'</div>'}).join('')+'<div style="margin-top:6px">'+({pt:'Downloads: o limite é o YouTube (bloqueio). Conversões: o limite é o processador do celular.',en:'Downloads: the limit is YouTube (blocking). Conversions: the limit is the phone processor.',es:'Descargas: el límite es YouTube (bloqueo). Conversiones: el límite es el procesador del teléfono.'}[LANG]||'')+'</div>'})();
-  (function(){var el=d.querySelector('#wfsl'),op=[10,20,30,50,60,120,0],v=wfget('dev_longas');v=(v===''||v==null)?30:+v;
+  (function(){var el=d.querySelector('#wfsl'),op=[10,20,30,50,60,120,0],v=wfget('dev_longas2');v=(v===''||v==null)?0:+v;
     el.innerHTML=op.map(function(n){return '<button type="button" data-n="'+n+'" class="'+(n===v?'on':'')+'">'+(n?n:T('Sempre'))+'</button>'}).join('');
-    el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset('dev_longas',b.dataset.n);[].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});fetch('/api/dev?longas='+b.dataset.n).then(devAtualiza)}})();
+    el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset('dev_longas2',b.dataset.n);[].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});fetch('/api/dev?longas='+b.dataset.n).then(devAtualiza)}})();
+  (function(){var PRE=[['eco',2,'Economia',{pt:'Use com bateria baixa, quando o celular estiver esquentando ou você estiver usando o celular para outra coisa. É mais lento (cerca de metade da velocidade) e gasta menos bateria.',en:'Use on low battery, when the phone is getting hot or you are using it for something else. Slower (about half the speed) and uses less battery.',es:'Úsalo con batería baja, cuando el teléfono se caliente o lo uses para otra cosa. Más lento (cerca de la mitad de velocidad) y gasta menos batería.'}],
+      ['equ',4,'Equilibrado',{pt:'Para o dia a dia. Melhor equilíbrio entre velocidade, calor e bateria. Recomendado.',en:'For everyday use. Best balance between speed, heat and battery. Recommended.',es:'Para el día a día. Mejor equilibrio entre velocidad, calor y batería. Recomendado.'}],
+      ['max',5,'Máximo',{pt:'Use com o celular carregando e com músicas curtas. É o mais rápido, mas esquenta mais, gasta mais bateria e aumenta a chance de o YouTube bloquear por um tempo. Com músicas muito longas o ganho é pequeno.',en:'Use while charging and with short songs. Fastest, but it runs hotter, uses more battery and raises the chance of a temporary YouTube block. With very long songs the gain is small.',es:'Úsalo con el teléfono cargando y con canciones cortas. Es lo más rápido, pero calienta más, gasta más batería y aumenta la posibilidad de un bloqueo temporal de YouTube. Con canciones muy largas la mejora es pequeña.'}]];
+    var el=d.querySelector('#wfpre'),de=d.querySelector('#wfpred');
+    function marca(){var r=+(wfget('dev_rede4')||4),c=+(wfget('dev_conv4')||4);[].forEach.call(el.children,function(b){var p=PRE[+b.dataset.i];b.classList.toggle('on',p[1]===r&&p[1]===c)})}
+    el.innerHTML=PRE.map(function(p,i){return '<button type="button" data-i="'+i+'">'+T(p[2])+' ('+p[1]+'/'+p[1]+')</button>'}).join('');
+    de.innerHTML=PRE.map(function(p){return '<div style="margin-top:6px"><b>'+T(p[2])+'</b> — '+(p[3][LANG]||p[3].pt)+'</div>'}).join('');
+    el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;var p=PRE[+b.dataset.i];wfset('dev_rede4',String(p[1]));wfset('dev_conv4',String(p[1]));
+      [['#wfsr'],['#wfsc']].forEach(function(x){[].forEach.call(d.querySelector(x[0]).children,function(c){c.classList.toggle('on',+c.dataset.n===p[1])})});
+      marca();fetch('/api/dev?rede='+p[1]+'&conv='+p[1]).then(devAtualiza)};
+    marca();d.addEventListener('click',function(ev){if(ev.target.closest('#wfsr,#wfsc'))setTimeout(marca,0)})})();
+  (function(){var ps=d.querySelector('#wfps'),cp=d.querySelector('#wfcp2'),pv=wfget('passo')||'10',cv=wfget('capa')||'esq';
+    ps.innerHTML=['10','15','30'].map(function(n){return '<button type="button" data-v="'+n+'" class="'+(n===pv?'on':'')+'">'+n+'</button>'}).join('');
+    cp.innerHTML=[['esq','Esquerda'],['dir','Direita'],['fundo','Ao fundo']].map(function(x){return '<button type="button" data-v="'+x[0]+'" class="'+(x[0]===cv?'on':'')+'">'+T(x[1])+'</button>'}).join('');
+    function liga(el,chave){el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset(chave,b.dataset.v);[].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});try{window.wfRep()}catch(e){}}}
+    liga(ps,'passo');liga(cp,'capa')})();
+  (function(){var cw=d.querySelector('#wfcw'),cc=d.querySelector('#wfcc'),bv=d.querySelector('#wfbv');
+    var bm=wfget('dev_batmin');bm=(bm===''||bm==null)?20:+bm;cw.checked=wfget('dev_wifi')==='1';cc.checked=wfget('dev_carga')==='1';
+    function pinta(){bv.textContent=bm?bm+'%':T('Desl.')}
+    function envia(){fetch('/api/dev?wifi='+(cw.checked?1:0)+'&carga='+(cc.checked?1:0)+'&batmin='+bm).then(devAtualiza)}
+    cw.onchange=function(){wfset('dev_wifi',cw.checked?'1':'');envia()};cc.onchange=function(){wfset('dev_carga',cc.checked?'1':'');envia()};
+    d.querySelector('#wfbm').onclick=function(){bm=Math.max(0,bm-5);wfset('dev_batmin',String(bm));pinta();envia()};
+    d.querySelector('#wfbp').onclick=function(){bm=Math.min(50,bm+5);wfset('dev_batmin',String(bm));pinta();envia()};pinta()})();
   d.querySelector('#wfdx').onclick=function(){clearInterval(DEVT);DEVT=null;d.remove()};
   d.querySelector('#wflp').onclick=function(){conf(T('Limpar o registro? Isso não pode ser desfeito.'),T('Limpar')).then(function(ok){if(ok)fetch('/api/dev?limpar=1').then(function(){devAtualiza()})})};
   function copia(t,msg){try{if(W&&W.copiar){W.copiar(t);toast(T(msg));return}}catch(e){}
@@ -432,8 +465,12 @@ function devAbrir(){
       'Médias ('+j.n+' músicas): info '+m.info+'s · download '+m.dl+'s · conversão '+m.conv+'s · espera '+m.espera+'s · total '+m.total+'s · '+j.por_hora+'/h',
       'Medianas: total '+md.total+'s · conversão '+md.conv+'s'];
     [['Normal',j.normal],['Rápido',j.veloz]].forEach(function(x){var r=x[1];if(r&&r.n)L.push('Lote '+x[0]+': '+r.n+' músicas · '+r.medias.total+'s · '+r.por_hora+'/h')});
-    var fd=j.falhas_det||[];if(fd.length){L.push('','Falhas (detalhe):');fd.forEach(function(f){L.push(f.t+' · '+f.titulo+' · '+Math.round((f.dur||0)/60)+' min · '+f.tent+' tentativa(s) · '+f.url+'\n   '+f.erro)})}
+    var fd=j.falhas_det||[];if(fd.length){L.push('','Falhas (detalhe):');fd.forEach(function(f){L.push(f.t+' · '+f.titulo+' · '+Math.round((f.dur||0)/60)+' min · '+f.tent+' tentativa(s) · '+f.url+'\n   '+f.erro+(f.tb?'\n   ['+f.tb+']':''))})}
     L.push('Músicas longas: '+(j.longas_min?'até '+j.longas_min+' min':'sempre baixar'));
+    var cd=j.cond||{};L.push('Condições: Wi-Fi '+(cd.wifi?'sim':'não')+' · carregando '+(cd.carga?'sim':'não')+' · bateria mínima '+(cd.bat_min?cd.bat_min+'%':'desligada')+(j.bloqueio?' · AGORA: '+j.bloqueio:''));
+    if(j.aparelho)L.push('Temperatura '+j.aparelho.temp+' °C · estado térmico '+j.aparelho.termico);
+    (j.lotes||[]).forEach(function(l){L.push('Lote '+l.t+': '+l.musicas+' músicas · '+Math.floor(l.seg/60)+'min'+(l.seg%60)+'s · bateria '+l.bat_ini+'→'+l.bat_fim+'%'+(l.carga?' (carregando)':'')+' · temp '+l.temp_ini+'→'+l.temp_max+' °C · térmico '+l.termico+' · '+(l.rap?'rápido':'normal')+' '+l.rede_n+'/'+l.conv_n)});
+    var fi=j.fila_int||[];if(fi.length){L.push('','Fila agora:');fi.forEach(function(x){L.push('#'+x.id+' '+x.st+' tent '+x.tent+' mét '+x.alt+' '+Math.round((x.dur||0)/60)+'min info '+x.info+' dl '+x.dl+' conv '+x.conv)})}
     if(comLog!==false){L.push('','Registro:');L=L.concat((j.log||[]).slice(-40).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}))}
     return L.join('\n')})}
   d.querySelector('#wfca').onclick=function(){relatorio(true).then(function(t){copia(t,'Relatório copiado')})};
@@ -460,7 +497,12 @@ function devAtualiza(){
     var lg=(j.log||[]).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}).join('\n');
     var el=d.querySelector('#wflg');el.textContent=lg||T('Sem eventos.');el.dataset.txt=lg;
     var ap='';try{if(W&&W.info){var i=JSON.parse(W.info());ap=lin(T('Bateria'),i.bat+'%'+(i.carregando?' ⚡':''))+lin(T('Memória do app'),i.memMb+' MB')+lin(T('Rede'),i.rede)}}catch(e){}
-    d.querySelector('#wfap').innerHTML=ap||lin('—','—')}).catch(function(){})}
+    var A=j.aparelho;if(A)ap+=lin(T('Temperatura'),A.temp+' °C · '+T('térmico')+' '+A.termico);
+    d.querySelector('#wfap').innerHTML=ap||lin('—','—');
+    d.querySelector('#wfcb').textContent=j.bloqueio?('⏸️ '+T(j.bloqueio)):'';
+    var L=(j.lotes||[]).slice(-1)[0];
+    d.querySelector('#wflo').innerHTML=L?lin(T('Músicas'),L.musicas+(L.falhas?' ('+L.falhas+' '+T('falhas')+')':''))+lin(T('Duração'),Math.floor(L.seg/60)+' min '+(L.seg%60)+' s')+lin(T('Bateria'),L.bat_ini+'% → '+L.bat_fim+'%'+(L.carga?' ⚡':'')+(L.carga?'':' ('+(L.bat_ini-L.bat_fim)+'%)'))+lin(T('Temperatura'),L.temp_ini+' → '+L.temp_max+' °C')+lin(T('Estado térmico (máx.)'),L.termico)+lin(T('Configuração'),(L.rap?T('rápido'):T('normal'))+' '+L.rede_n+'/'+L.conv_n):'<tr><td>'+T('Sem lotes ainda.')+'</td></tr>';
+    d.querySelector('#wffi').innerHTML=(j.fila_int||[]).length?(j.fila_int||[]).map(function(x){return '<div><b>'+x.id+'</b> '+x.titulo+'<br>'+x.st+(x.tent?' · tent. '+x.tent:'')+(x.alt?' · método '+x.alt:'')+(x.dur?' · '+Math.round(x.dur/60)+' min':'')+(x.espera?' · espera '+x.espera+'s':'')+' · info '+x.info+'s · dl '+x.dl+'s · conv '+x.conv+'s'+(x.vel?' · '+x.vel:'')+'</div>'}).join(''):T('Fila vazia.')}).catch(function(){})}
 
 setLang(LANG);
 })();
