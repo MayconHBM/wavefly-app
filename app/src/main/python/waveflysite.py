@@ -1384,7 +1384,7 @@ def dev_estado():
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
             "falhas_det": list(DEV["falhas_det"][-25:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
-            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(),
+            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
             "fila_int": fila_interna()}
 
 
@@ -1591,7 +1591,7 @@ def tratar_falha(it, erro):
         it["_alt"] = tent        # a cada tentativa usa outro 'cliente' do YouTube
         it["_nao_antes"] = time.time() + atraso
         with LOCK:
-            it.update(status="fila", pct=0, vel="Nova tentativa" + (" em %d s" % atraso if atraso else ""), erro="")
+            it.update(status="fila", pct=0, vel="Tentando de novo (%d/4)" % tent + (" · em %d s" % atraso if atraso else ""), erro="")
         dev_log("tentativa", "%s (%d/4): %s" % (nome, tent, erro[:150]))
         return bloqueio
     DEV["falha"] += 1
@@ -2702,6 +2702,15 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   .sel button,.sbar button{background:#000!important;color:#ffd860!important;border:2px solid #ffd860!important}
   .mk{filter:drop-shadow(0 4px 4px rgba(0,0,0,.6))!important}
 }
+
+#libbar{flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;gap:8px!important;padding:10px 12px!important}
+#libbar .lbtop{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#libbar #selc{white-space:nowrap;font-weight:800;font-size:15px}
+#libbar .lblk{display:flex;gap:6px}
+#libbar .lblk button{min-height:34px!important;padding:0 10px!important;font-size:13px!important;white-space:nowrap}
+#libbar .lbact{display:flex;gap:8px}
+#libbar .lbact button{flex:1 1 0;min-height:44px!important;font-size:15px!important;white-space:nowrap}
+#libbar .lbact button[hidden]{display:none!important}
 </style></head><body>
 <div class="w">
 <header><span class="mk"><svg viewBox="0 0 80 52" aria-hidden="true"><rect x="1.5" y="1.5" width="77" height="49" rx="6" fill="#f1dfb8" stroke="#4a2a17" stroke-width="2.6"/><circle cx="6.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="6.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="6.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><circle cx="73.5" cy="45.5" r="1.8" fill="#d9bf8c" stroke="#4a2a17" stroke-width=".8"/><rect x="11" y="5.5" width="58" height="21" rx="2.5" fill="#e8873a" stroke="#4a2a17" stroke-width="1.4"/><path d="M11 8a2.5 2.5 0 0 1 2.5-2.5h53A2.5 2.5 0 0 1 69 8v2.5H11z" fill="#c8581f"/><rect x="14" y="13" width="52" height="10" rx="1.5" fill="#f3e3c3" stroke="#4a2a17" stroke-width=".6"/><path d="M16.5 16.5h27M16.5 20h17" stroke="#4a2a17" stroke-width="1" stroke-linecap="round" opacity=".7"/><circle cx="58" cy="18" r="3.6" fill="#e8873a" stroke="#4a2a17" stroke-width=".9"/><circle cx="58" cy="18" r="1.2" fill="#4a2a17"/><rect x="17" y="29" width="46" height="14" rx="7" fill="#2a1a10" stroke="#4a2a17" stroke-width="1.4"/><path d="M29 42.4H51" stroke="#6b4228" stroke-width="1.2"/><circle cx="29" cy="36" r="6.4" fill="#6b4228"/><circle cx="51" cy="36" r="5" fill="#6b4228"/><g class="mkr" style="transform-origin:29px 36px"><circle cx="29" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M29 31.9v8.2M25.5 34l7 4M32.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><g class="mkr" style="transform-origin:51px 36px"><circle cx="51" cy="36" r="4.6" fill="#f1dfb8" stroke="#4a2a17" stroke-width=".9"/><path d="M51 31.9v8.2M47.5 34l7 4M54.5 34l-7 4" stroke="#4a2a17" stroke-width="1.2" stroke-linecap="round"/></g><path d="M22 45.5 25 49.2H55L58 45.5z" fill="#d9bf8c" stroke="#4a2a17" stroke-width="1.1" stroke-linejoin="round"/><circle cx="32" cy="47.3" r="1.1" fill="#2a1a10"/><circle cx="48" cy="47.3" r="1.1" fill="#2a1a10"/><path d="M5 12v26" stroke="#fff" stroke-width="1.2" stroke-linecap="round" opacity=".35"/></svg></span><b class="wm">Wave<i>Fly</i></b><span class="sp1"></span>
@@ -2762,7 +2771,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
 <input type="file" id="edfile" accept="image/*" hidden>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
-<div class="sel" id="libbar" hidden><span id="selc"></span><span><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bedit" hidden>Editar</button><button id="bdel">Apagar</button></span></div>
+<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bedit" hidden>Editar</button><button id="bdel">Apagar</button></div></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
