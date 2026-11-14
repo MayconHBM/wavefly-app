@@ -1,0 +1,80 @@
+name: Gerar WaveFly para PC (.exe)
+
+on:
+  push:
+    branches: [ 'pc-exe' ]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller "yt-dlp[default]" mutagen certifi
+
+      - name: Baixar ffmpeg e deno
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ff.zip
+          Expand-Archive ff.zip -DestinationPath ffx
+          Copy-Item (Get-ChildItem -Recurse ffx -Filter ffmpeg.exe | Select-Object -First 1).FullName bin\ffmpeg.exe
+          Copy-Item (Get-ChildItem -Recurse ffx -Filter ffprobe.exe | Select-Object -First 1).FullName bin\ffprobe.exe
+          Invoke-WebRequest -Uri "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -OutFile deno.zip
+          Expand-Archive deno.zip -DestinationPath denox
+          Copy-Item denox\deno.exe bin\deno.exe
+          Get-ChildItem bin | Format-Table Name, Length
+
+      - name: Montar o .exe
+        shell: pwsh
+        run: |
+          Copy-Item app\src\main\python\*.py pc\ -Force
+          cd pc
+          pyinstaller --onefile --console --name WaveFly-PC `
+            --add-binary "..\bin\ffmpeg.exe;bin" --add-binary "..\bin\ffprobe.exe;bin" --add-binary "..\bin\deno.exe;bin" `
+            --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all certifi --collect-all mutagen `
+            --hidden-import waveflysite --hidden-import wavefly_android --hidden-import wavefly_ui --hidden-import app_entry `
+            pc_entry.py
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Teste de fumaça (ffmpeg, deno, imports)
+        shell: pwsh
+        run: |
+          pc\dist\WaveFly-PC.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "selftest falhou" }
+
+      - name: Teste de fumaça (servidor sobe e responde)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath pc\dist\WaveFly-PC.exe -ArgumentList "--port","8791" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 2
+            try { $r = Invoke-WebRequest -Uri "http://127.0.0.1:8791/" -UseBasicParsing -TimeoutSec 3; if ($r.StatusCode -eq 200 -and $r.Content.Length -gt 10000) { $ok = $true; break } } catch {}
+          }
+          $dev = ""
+          try { $dev = (Invoke-WebRequest -Uri "http://127.0.0.1:8791/api/dev" -UseBasicParsing -TimeoutSec 5).Content } catch {}
+          Write-Output "api/dev: $dev"
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "servidor nao respondeu" }
+
+      - name: Publicar
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item pc\dist\WaveFly-PC.exe WaveFly-PC.exe
+          Copy-Item pc\celular.bat WaveFly-PC-celular.bat
+          gh release create "pc-${{ github.run_number }}" WaveFly-PC.exe WaveFly-PC-celular.bat --target "$env:GITHUB_SHA" --prerelease --latest=false --title "WaveFly PC TESTE #${{ github.run_number }}" --notes "WaveFly para Windows (arquivo unico). Abra o WaveFly-PC.exe. Para usar pelo celular na mesma rede Wi-Fi, abra o WaveFly-PC-celular.bat."
+          Get-ChildItem WaveFly-PC.exe | Format-Table Name, Length

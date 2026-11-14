@@ -40,7 +40,7 @@ VIDEO_EXTS = (".mp4", ".mkv")
 EXTS = AUDIO_EXTS + VIDEO_EXTS
 MIME = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".webm": "audio/webm", ".opus": "audio/ogg", ".ogg": "audio/ogg", ".aac": "audio/aac", ".mp4": "video/mp4", ".mkv": "video/x-matroska", ".zip": "application/zip"}
 
-ANDROID = os.path.isdir("/storage/emulated/0") or bool(os.environ.get("WAVEFLY_DATA"))
+ANDROID = os.path.isdir("/storage/emulated/0") or (bool(os.environ.get("WAVEFLY_DATA")) and not os.environ.get("WAVEFLY_PC"))
 PASTA_PADRAO = ("/storage/emulated/0/Download/" + PASTA_NOME) if ANDROID else os.path.join(os.path.expanduser("~"), "Music", PASTA_NOME)
 PASTAS_PADRAO = {PASTA_NOME: PASTA_PADRAO}
 CFG = {"pastas": dict(PASTAS_PADRAO), "atual": PASTA_NOME, "qualidade": 192, "formato": "mp3", "modo_playlist": "pasta",
@@ -894,6 +894,12 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
 
 
 def matar_ffmpeg():
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "ffmpeg.exe"], capture_output=True, timeout=10, creationflags=0x08000000)
+        except Exception:
+            pass
+        return
     if not os.path.isdir("/proc"):
         return
     meu = os.getpid()
