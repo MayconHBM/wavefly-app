@@ -1934,12 +1934,22 @@ def _trocar_caminho(velho, novo):
             pass
 
 
+def _em_andamento():
+    """Arquivos (pasta, nome sem extensão) de downloads que ainda estão baixando/convertendo: não aparecem na biblioteca."""
+    with LOCK:
+        return {(os.path.realpath(i["destino"]), i["nome"]) for i in ITENS
+                if i["status"] == "baixando" and i.get("nome") and i.get("destino")}
+
+
 def lista_biblioteca(com_dur=False):
     r = raiz()
     out = {"musicas": [], "playlists": [], "videos": []}
     playlists_map = {}
+    andamento = _em_andamento()
 
     for c in listar_mp3(r, EXTS):
+        if andamento and (os.path.dirname(os.path.realpath(c)), os.path.splitext(os.path.basename(c))[0]) in andamento:
+            continue
         rel = os.path.relpath(c, r)
         p = os.path.dirname(rel)
         try:
