@@ -772,7 +772,7 @@ def capa_de(pth):
         except OSError:
             pass
         return "image/jpeg", dados
-    CAPA_NEG[pth] = time.time() + 600
+    CAPA_NEG[pth] = time.time() + (20 if vid else 600)    # falha de rede: tenta de novo logo; sem ID de vídeo: não insiste
     return None
 
 
@@ -2352,7 +2352,7 @@ class H(BaseHTTPRequestHandler):
         if not img:
             self.send_response(404)
             self.send_header("Content-Length", "0")
-            self.send_header("Cache-Control", "private, max-age=300")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
         self.send_response(200)
@@ -2902,7 +2902,10 @@ const I={
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${I[n]}</svg>`;
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
 const WAVE='<svg viewBox="0 0 76 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="70" height="42" rx="6"/><rect x="11" y="9" width="54" height="14" rx="2"/><rect x="20" y="28" width="36" height="11" rx="5.5"/><circle cx="29" cy="33.5" r="2.6"/><circle cx="47" cy="33.5" r="2.6"/></svg>';
-const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}&v=${CAPAV.v}" alt="" onerror="this.style.display='none'"></span>`;
+const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}&v=${CAPAV.v}" alt="" onerror="covErr(this)" onload="this.style.display=''"></span>`;
+function covErr(im){const n=+(im.dataset.n||0);if(n>=3){im.style.display='none';return}im.dataset.n=n+1;
+ if(!im.dataset.b)im.dataset.b=im.getAttribute('src');
+ setTimeout(()=>{if(im.isConnected)im.src=im.dataset.b+'&r='+Date.now()},1500*(n+1))}
 let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,READY=[],LST=[],LR={dup:0,fora:0},PVN=5,PVT,QVN=5,ABAF='fila';
 async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'wavefly'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok||j.erro)throw new Error(j.erro||('Erro '+r.status));return j}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(TT);TT=setTimeout(()=>t.classList.remove('on'),Math.min(4500,1700+m.length*28))}
@@ -3073,7 +3076,7 @@ function rowHTML(i){let sub='',cls='';
  return `<div class="it" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
 const ORD={baixando:0,fila:1,falha:2,duplicada:3,cancelada:4,ok:5};
 function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada,at=s.fila+s.baixando>0;
- if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt()}}
+ if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt();libAtual(1)}}
  document.title=(at?`${c}/${s.total} · `:'')+APPN;$('#fila').hidden=!s.total;if(!s.total){LAST='';READY=[];return}
  READY=s.itens.filter(i=>i.status==='ok'&&i.arq).map(i=>i.arq);$('#entrega').hidden=!(C.servidor&&READY.length);$('#en').textContent=READY.length;
  $('#eq').classList.toggle('on',at);document.body.classList.toggle('baixando',at);$('#fh').textContent=at?'Baixando Fila':'Concluído';$('#fc').textContent=`${c} de ${s.total}`;$('#fbar').style.width=Math.round(c/s.total*100)+'%';
@@ -3125,7 +3128,21 @@ $('#edsalva').onclick=async()=>{
  catch(e){toast(e.message||'Não consegui salvar.')}
  $('#edsalva').disabled=false};
 
-async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
+let LIBSIG='',LIBT=0,LIBBUSY=0;
+const libSig=d=>[].concat(d.musicas||[],d.videos||[],...(d.playlists||[]).map(p=>p.itens||[])).map(x=>x.rel+'|'+x.tam+'|'+(x.mt||0)).join('\n');
+async function libAtual(forca){
+ if(LIBBUSY||document.hidden||$('#v-musicas').hidden)return;
+ if($('#edm').style.display==='flex')return;
+ if(!forca&&Date.now()-LIBT<5000)return;
+ LIBBUSY=1;LIBT=Date.now();
+ try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));const sg=libSig(d);
+  if(sg!==LIBSIG){LIBSIG=sg;LIB=d;LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}
+   if(ACTIVE_PL)ACTIVE_PL=(d.playlists||[]).find(p=>p.nome===ACTIVE_PL.nome)||null;dlib()}}
+ catch(e){}
+ LIBBUSY=0}
+setInterval(()=>libAtual(0),6000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)libAtual(1)});
+async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIBSIG=libSig(d);LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
