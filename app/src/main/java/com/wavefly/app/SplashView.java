@@ -11,7 +11,7 @@ import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.view.animation.LinearInterpolator;
 
-/** Tela de abertura: uma fita cassete com os carretéis girando e a fita passando de um lado para o outro. */
+/** Tela de abertura: equalizador animado, nome do app e barra de carregamento. */
 class SplashView extends android.view.View {
     private final boolean escuro;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -106,92 +106,8 @@ class SplashView extends android.view.View {
         float u = cw / 80f;
         double T = t * 2 * Math.PI;
 
-        // sombra
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0x33000000);
-        r.set(x0 + u, y0 + 3 * u, x0 + cw + u, y0 + ch + 3 * u);
-        c.drawRoundRect(r, 6 * u, 6 * u, p);
-        // corpo com leve degradê
-        p.setShader(new LinearGradient(0, y0, 0, y0 + ch, 0xFFF7E8C6, 0xFFE6CF9C, Shader.TileMode.CLAMP));
-        r.set(x0, y0, x0 + cw, y0 + ch);
-        c.drawRoundRect(r, 6 * u, 6 * u, p);
-        p.setShader(null);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(2.4f * u);
-        p.setColor(0xFF4A2A17);
-        c.drawRoundRect(r, 6 * u, 6 * u, p);
-        // parafusos
-        parafuso(c, x0 + 5 * u, y0 + 5 * u, u, 30);
-        parafuso(c, x0 + cw - 5 * u, y0 + 5 * u, u, 100);
-        parafuso(c, x0 + 5 * u, y0 + ch - 5 * u, u, 70);
-        parafuso(c, x0 + cw - 5 * u, y0 + ch - 5 * u, u, 150);
-        // etiqueta laranja
-        p.setStyle(Paint.Style.FILL);
-        p.setShader(new LinearGradient(0, y0 + 5 * u, 0, y0 + 26 * u, 0xFFE8873A, 0xFFC8581F, Shader.TileMode.CLAMP));
-        r.set(x0 + 10 * u, y0 + 5 * u, x0 + 70 * u, y0 + 26 * u);
-        c.drawRoundRect(r, 2.5f * u, 2.5f * u, p);
-        p.setShader(null);
-        // listras da etiqueta
-        p.setColor(0x55FFFFFF);
-        c.drawRect(x0 + 10 * u, y0 + 7.5f * u, x0 + 70 * u, y0 + 8.7f * u, p);
-        c.drawRect(x0 + 10 * u, y0 + 9.6f * u, x0 + 70 * u, y0 + 10.3f * u, p);
-        p.setColor(0xFFF3E3C3);
-        r.set(x0 + 13 * u, y0 + 12 * u, x0 + 67 * u, y0 + 23 * u);
-        c.drawRoundRect(r, 1.5f * u, 1.5f * u, p);
-        p.setColor(0xFF4A2A17);
-        p.setTextSize(7.2f * u);
-        p.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
-        p.setTextAlign(Paint.Align.LEFT);
-        c.drawText("WaveFly", x0 + 16 * u, y0 + 20.6f * u, p);
-        // mini onda na etiqueta
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.9f * u);
-        p.setColor(0xFFD9692A);
-        android.graphics.Path onda = new android.graphics.Path();
-        for (int i = 0; i <= 20; i++) {
-            float ox = x0 + 49 * u + i * 0.85f * u;
-            float oy = y0 + 17.5f * u + (float) Math.sin(T * 2 + i * 0.55) * 2.4f * u * (1f - Math.abs(i - 10) / 11f);
-            if (i == 0) onda.moveTo(ox, oy); else onda.lineTo(ox, oy);
-        }
-        c.drawPath(onda, p);
-        p.setStyle(Paint.Style.FILL);
-        // janela da fita
-        p.setColor(0xFF2A1A10);
-        r.set(x0 + 15 * u, y0 + 30 * u, x0 + 65 * u, y0 + 46 * u);
-        c.drawRoundRect(r, 8 * u, 8 * u, p);
-        // fita esticada entre os carretéis (parte de baixo)
-        float vai = 0.5f + 0.5f * (float) Math.sin(T);
-        float rE = (6.2f - 1.6f * vai) * u, rD = (4.6f + 1.6f * vai) * u;
-        p.setColor(0xFF6B4228);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.8f * u);
-        c.drawLine(x0 + 28 * u, y0 + 38 * u + rE, x0 + 52 * u, y0 + 38 * u + rD, p);
-        p.setStyle(Paint.Style.FILL);
-        c.drawCircle(x0 + 28 * u, y0 + 38 * u, rE, p);
-        c.drawCircle(x0 + 52 * u, y0 + 38 * u, rD, p);
-        // anéis da fita enrolada
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.3f * u);
-        p.setColor(0x55000000);
-        for (float q = 5.2f; q < 6.2f; q += 0.5f) { c.drawCircle(x0 + 28 * u, y0 + 38 * u, Math.min(rE, q * u), p); }
-        for (float q = 4.9f; q < 6.2f; q += 0.5f) { c.drawCircle(x0 + 52 * u, y0 + 38 * u, Math.min(rD, q * u), p); }
-        p.setStyle(Paint.Style.FILL);
-        reel(c, x0 + 28 * u, y0 + 38 * u, 4.4f * u, t * 720f);
-        reel(c, x0 + 52 * u, y0 + 38 * u, 4.4f * u, t * 720f);
-        // base trapezoidal com furos
-        p.setColor(0xFFD9BF8C);
-        android.graphics.Path base = new android.graphics.Path();
-        base.moveTo(x0 + 22 * u, y0 + ch - 4 * u);
-        base.lineTo(x0 + 26 * u, y0 + ch - 0.5f * u);
-        base.lineTo(x0 + 54 * u, y0 + ch - 0.5f * u);
-        base.lineTo(x0 + 58 * u, y0 + ch - 4 * u);
-        base.close();
-        c.drawPath(base, p);
-        p.setColor(0xFF4A2A17);
-        for (int i = 0; i < 4; i++) c.drawCircle(x0 + (31 + i * 6) * u, y0 + ch - 2.2f * u, 0.8f * u, p);
-
         // equalizador com degradê
-        float by = cy0 + ch / 2f + 20 * u;
+        float by = h * 0.46f - 20.8f * u;   // sem a fita: o conjunto fica centralizado na tela
         float bw = 5f * u * 0.6f;
         for (int i = 0; i < 13; i++) {
             float a = (float) Math.abs(Math.sin(T + i * 0.55) * Math.cos(T * 0.5 + i * 0.3));
