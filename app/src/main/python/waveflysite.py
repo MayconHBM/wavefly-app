@@ -936,7 +936,7 @@ def amigavel(erro):
         return "Link não reconhecido. Confira se ele está correto."
     if any(x in e for x in ("video unavailable", "private video", "has been removed", "no longer available", "this video is", "not available")):
         return "Vídeo indisponível (privado, removido ou bloqueado)."
-    if "age" in e and ("confirm" in e or "restrict" in e or "inappropriate" in e):
+    if re.search(r"\bage\b|age-restrict", e) and ("confirm" in e or "restrict" in e or "inappropriate" in e):
         return "Vídeo com restrição de idade: não dá para baixar."
     return erro
 
@@ -1384,7 +1384,7 @@ def dev_estado():
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
             "falhas_det": list(DEV["falhas_det"][-25:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
-            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
+            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
             "fila_int": fila_interna()}
 
 
@@ -1580,7 +1580,7 @@ def tratar_falha(it, erro):
     if bloqueio:
         acionar_freio("YouTube pediu confirmação (bloqueio)")
         DEV["esfriar"] = time.time() + 240
-    permanente = any(x in e for x in ("private video", "age", "members-only", "copyright")) and "try again" not in e
+    permanente = (any(x in e for x in ("private video", "members-only", "copyright")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
@@ -1614,7 +1614,12 @@ def trabalhador(idx=0):
                 time.sleep(1)
                 continue
             if DEV["esfriar"] > time.time() and restantes():
-                aviso("⏸️ Pausando um pouco para o YouTube esfriar. A fila continua em seguida.")
+                falta = int(DEV["esfriar"] - time.time())
+                aviso("⏸️ Pausando um pouco para o YouTube esfriar (%d:%02d). A fila continua em seguida." % (falta // 60, falta % 60))
+                with LOCK:
+                    for q in ITENS:
+                        if q["status"] == "fila" and not q.get("_nao_antes"):
+                            q["vel"] = "Aguardando o YouTube esfriar (%d:%02d)" % (falta // 60, falta % 60)
                 time.sleep(1)
                 continue
             if PAUSA["on"]:
