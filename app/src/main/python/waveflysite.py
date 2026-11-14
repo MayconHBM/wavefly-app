@@ -701,6 +701,21 @@ def _vid_por_nome(pth):
     return None
 
 
+SEM_CAPA_FILE = os.path.join(BASE, "sem_capa.json")
+try:
+    with open(SEM_CAPA_FILE, encoding="utf-8") as _f:
+        SEM_CAPA = set(json.load(_f))
+except Exception:
+    SEM_CAPA = set()
+
+
+def _salvar_sem_capa():
+    try:
+        _gravar(SEM_CAPA_FILE, sorted(SEM_CAPA))
+    except Exception:
+        pass
+
+
 def capa_de(pth):
     """Devolve (mime, bytes) da capa de um arquivo, ou None. Ordem:
     1) embutida no arquivo  2) imagem ao lado  3) cache  4) miniatura do YouTube  5) quadro do vídeo."""
@@ -708,6 +723,8 @@ def capa_de(pth):
     img = capa_mp3(pth) if ext == ".mp3" else capa_mp4(pth) if ext in (".m4a", ".mp4", ".aac") else None
     if img and img[1]:
         return img
+    if os.path.realpath(pth) in SEM_CAPA:
+        return None     # o usuário removeu a capa de propósito: não volta a miniatura do YouTube
     base = os.path.splitext(pth)[0]
     for e, m in ((".jpg", "image/jpeg"), (".jpeg", "image/jpeg"), (".png", "image/png"), (".webp", "image/webp")):
         if os.path.isfile(base + e):
@@ -784,7 +801,9 @@ def novo_item(url, sub="", forcar=False, pasta=None, fmt=None, qual=None, res=No
 def salvar_fila():
     with LOCK:
         pend = [{"url": i["url"], "sub": i["sub"], "forcar": i["forcar"], "pasta": i["pasta"],
-                 "fmt": i["fmt"], "qual": i["qual"], "res": i["res"]}
+                 "fmt": i["fmt"], "qual": i["qual"], "res": i["res"],
+                 "nome": i.get("nome") if i["status"] == "baixando" else None,
+                 "destino": i.get("destino") if i["status"] == "baixando" else None}
                 for i in ITENS if i["status"] in ("fila", "baixando")]
     try:
         _gravar(FILA_FILE, pend)
@@ -799,6 +818,8 @@ def restaurar_fila():
     except Exception:
         return
     for p in pend:
+        if p.get("nome") and p.get("destino"):
+            limpar_cancelado({"nome": p["nome"], "destino": p["destino"], "fmt": p.get("fmt")})   # sobras do download interrompido
         novo_item(p["url"], p.get("sub", ""), p.get("forcar", False), p.get("pasta"),
                   p.get("fmt"), p.get("qual"), p.get("res"))
     if pend:
@@ -938,6 +959,8 @@ def amigavel(erro):
         return "Vídeo indisponível (privado, removido ou bloqueado)."
     if re.search(r"\bage\b|age-restrict", e) and ("confirm" in e or "restrict" in e or "inappropriate" in e):
         return "Vídeo com restrição de idade: não dá para baixar."
+    if any(x in e for x in ("name resolution", "getaddrinfo", "network is unreachable", "no address associated", "name or service not known", "temporary failure in name", "resolve host", "failed to resolve", "no route to host")):
+        return "Sem conexão com a internet. Confira e tente de novo."
     return erro
 
 
@@ -1476,6 +1499,7 @@ def _processar(it):
     nome = proximo_livre(dest, base, exts) if ja else base
     it["nome"] = nome
     it["destino"] = os.path.join(r, it["sub"]) if it["sub"] else r
+    salvar_fila()           # guarda o nome: se o app fechar agora, as sobras são limpas na volta
     it["pct"] = 0
     t0 = time.monotonic()
     it["_t"]["info"] = t0 - t_ini - it["_t"]["espera"]
@@ -1632,6 +1656,8 @@ def trabalhador(idx=0):
                 aviso("⏸️ " + motivo)
                 time.sleep(2)
                 continue
+            if str(SESS.get("aviso") or "").startswith("⏸️") and not PAUSA["on"]:
+                aviso("")       # a condição liberou (ex.: carregador conectado): tira o aviso de espera
             it = pegar()
             if not it:
                 feitos = 0
@@ -1843,6 +1869,17 @@ def etiquetas_gravar(d):
             tg.save()
     except Exception as ex:
         return {"erro": "Não consegui gravar as etiquetas: " + str(ex)[:120]}
+    if capa == "remover":
+        SEM_CAPA.add(os.path.realpath(p))
+        b0 = os.path.splitext(p)[0]
+        for e in (".jpg", ".jpeg", ".png", ".webp"):      # imagem solta ao lado também sairia como capa
+            try:
+                if os.path.isfile(b0 + e):
+                    os.remove(b0 + e)
+            except OSError:
+                pass
+    elif img:
+        SEM_CAPA.discard(os.path.realpath(p))
     novo_rel = rel
     base = _limpo(titulo)
     if base and base != os.path.splitext(os.path.basename(p))[0]:
@@ -1854,6 +1891,9 @@ def etiquetas_gravar(d):
             n += 1
         try:
             os.rename(p, alvo)
+            if os.path.realpath(p) in SEM_CAPA:
+                SEM_CAPA.discard(os.path.realpath(p))
+                SEM_CAPA.add(os.path.realpath(alvo))
             _trocar_caminho(p, alvo)
             novo_rel = os.path.relpath(alvo, os.path.realpath(raiz()))
         except OSError as ex:
@@ -1863,6 +1903,13 @@ def etiquetas_gravar(d):
         if os.path.isfile(c):
             os.remove(c)
         CAPA_NEG.pop(p, None)
+    except Exception:
+        pass
+    _salvar_sem_capa()
+    try:
+        c2 = _cache_capa(os.path.join(os.path.dirname(p), os.path.basename(novo_rel)))
+        if os.path.isfile(c2):
+            os.remove(c2)
     except Exception:
         pass
     NOMES["k"] = None
@@ -1940,17 +1987,31 @@ def lista_biblioteca(com_dur=False):
 
 def apagar(rels):
     n = 0
+    falhas = []
     NOMES["k"] = None
     for rel in rels:
         p = caminho_seguro(rel)
-        if p and p.lower().endswith(EXTS) and os.path.isfile(p):
+        if not p:
+            falhas.append("caminho inválido")
+            dev_log("erro", "apagar: caminho inválido (%s)" % rel[:60])
+        elif not os.path.isfile(p):
+            falhas.append("arquivo não encontrado")
+            dev_log("erro", "apagar: arquivo não encontrado (%s)" % rel[:60])
+        elif p.lower().endswith(EXTS):
             try:
-                os.remove(p)
+                try:
+                    os.remove(p)
+                except PermissionError:
+                    os.chmod(p, 0o666)
+                    os.remove(p)
                 limpar_pasta_vazia(p)
+                SEM_CAPA.discard(p)
                 n += 1
-            except OSError:
-                pass
-    return {"apagadas": n}
+            except OSError as ex:
+                falhas.append(str(ex)[:60])
+                dev_log("erro", "apagar: %s (%s)" % (str(ex)[:80], rel[:60]))
+    _salvar_sem_capa()
+    return {"apagadas": n, "falhas": falhas[:5]}
 
 
 def _sem_acento(t):
@@ -2920,9 +2981,10 @@ function fetchTit(id){if(TITS.has(id)||TQ.includes(id))return;TQ.push(id);pumpT(
 let RPVT=0;function refazer(){clearTimeout(RPVT);RPVT=setTimeout(()=>{rpv();ccount()},120)}
 const TRY={},LQ=[];let LA=0;
 function pumpL(){if(LA||!LQ.length)return;const id=LQ.shift();LA=1;api('/api/aovivo?id='+encodeURIComponent(id)).then(d=>{if(d.dur){TITS.set(id,Object.assign({},TITS.get(id)||{},{dur:d.dur}));ccount()}if(d.live){TITS.set(id,Object.assign({},TITS.get(id)||{},{live:true}));refazer();toast('Transmissão ao vivo não dá para baixar')}}).catch(()=>{}).finally(()=>{LA=0;pumpL()})}
-function pumpT(){while(TA<4&&TQ.length){const id=TQ.shift();TA++;const falhou=()=>{TRY[id]=(TRY[id]||0)+1;if(TRY[id]<=3)setTimeout(()=>fetchTit(id),2000*TRY[id]);else TITS.set(id,{titulo:'',canal:'',tmp:true})};
- api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=40){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live))refazer();pumpT()})}}
+function pumpT(){while(TA<4&&TQ.length){const id=TQ.shift();if(navigator.onLine===false){TITS.set(id,{titulo:'',canal:'',tmp:true,off:true});updTit(id);refazer();continue}TA++;const falhou=()=>{TRY[id]=(TRY[id]||0)+1;if(TRY[id]<=3)setTimeout(()=>fetchTit(id),2000*TRY[id]);else TITS.set(id,{titulo:'',canal:'',tmp:true})};
+ api('/api/titulo?id='+encodeURIComponent(id)).then(d=>{if(d.titulo){TITS.set(id,d);if(LST.length<=40){LQ.push(id);pumpL()}}else if(d.indisp)TITS.set(id,{titulo:'',canal:'',erro:true});else falhou()}).catch(falhou).finally(()=>{TA--;updTit(id);if(!JA.has(id)){JAK.delete(id);jaIds([id])}const dd=TITS.get(id);if(dd&&(dd.erro||dd.live||dd.tmp))refazer();pumpT()})}}
 const titTxt=(id,d)=>d.titulo||((d.erro||d.tmp)?'Vídeo '+id:'Carregando...');
+addEventListener('online',()=>{for(const [k,v] of [...TITS]){if(v&&v.tmp){TITS.delete(k);TRY[k]=0}}refazer();toast('Internet de volta')});addEventListener('offline',()=>toast('Sem internet'));
 function updTit(id){const d=TITS.get(id)||{};$$(`[data-tid="${id}"]`).forEach(e=>e.textContent=titTxt(id,d));$$(`[data-cid="${id}"]`).forEach(e=>e.textContent=d.canal||(d.erro?'Título indisponível':''))}
 const indisp=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).erro&&!TITS.get(x.id).titulo);
 const aoVivo=x=>!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).live);
@@ -2935,8 +2997,8 @@ function rpv(){const b=$('#pv');if(!LST.length){b.hidden=true;b.innerHTML='';ret
  const vis=sing.slice(0,PVN),rest=sing.length-vis.length;b.hidden=false;
  b.innerHTML=pls.map(x=>plHTML(PLP[x.pid])).join('')+vis.map(x=>{const d=x.id?(TITS.get(x.id)||{}):{},j=!!(x.id&&JA.has(x.id));
   const th=x.id?`<img class="ft s" loading="lazy" src="https://i.ytimg.com/vi/${esc(x.id)}/mqdefault.jpg" alt="">`:'<span class="ft s"></span>';
-  const lv=aoVivo(x),iv=invalido(x),ix=indisp(x),bad=lv||iv||ix;
-  const l2=iv?'<div class="ja tt">Link inválido · não dá para baixar</div>':ix?'<div class="ja tt">Vídeo inexistente ou indisponível · não dá para baixar</div>':lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
+  const lv=aoVivo(x),iv=invalido(x),ix=indisp(x),sc=!!(x.id&&TITS.get(x.id)&&TITS.get(x.id).tmp),bad=lv||iv||ix;
+  const l2=iv?'<div class="ja tt">Link inválido · não dá para baixar</div>':ix?'<div class="ja tt">Vídeo inexistente ou indisponível · não dá para baixar</div>':sc?'<div class="ja tt">Sem internet ou YouTube fora do ar · não consegui ler este vídeo. Confira a conexão.</div>':lv?'<div class="ja tt">Transmissão ao vivo: não dá para baixar</div>':j?'<div class="ja tt">Já existe na pasta · marcada como duplicada</div>':`<div class="sm mut tt" data-cid="${esc(x.id)}">${esc(d.canal||(d.erro?'Título indisponível':'Carregando...'))}</div>`;
   const tt=x.id?`<div class="tt" data-tid="${esc(x.id)}">${esc(titTxt(x.id,d))}</div>${l2}`:`<div class="tt">${esc(short(x.url))}</div>${l2}`;
   return `<div class="pr${j||bad?' off':''}" ${j||bad?'style="opacity:.7"':''}>${th}<div class="bd2">${tt}</div><button class="pvx" data-rm="${esc(x.url)}" aria-label="Remover" data-i="x">×</button></div>`}).join('')+
   (rest>0?`<button class="t" id="pvmais">Ver mais (${Math.min(7,rest)})</button>`:'')+(PVN>5&&sing.length>5?'<button class="t" id="pvmenos">Recolher</button>':'');
@@ -3063,7 +3125,7 @@ $('#edsalva').onclick=async()=>{
  catch(e){toast(e.message||'Não consegui salvar.')}
  $('#edsalva').disabled=false};
 
-async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIB.durok=/^d/.test(LORD);let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
+async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
@@ -3203,7 +3265,7 @@ function stopIf(r){if(CUR&&r.includes(CUR))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
 $('#bsa').onclick=()=>{(LIBQ||[]).forEach(r=>SEL.add(r));dlib()};
-$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagados');JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
+$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagado'+(r.apagadas===1?'':'s')+((r.falhas&&r.falhas.length)?' · '+r.falhas.length+' não deu: '+r.falhas[0]:''));JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
 
 $('#bvar').onclick=async()=>{const b=$('#bvar');b.disabled=true;b.textContent='Procurando...';
  try{RG=(await api('/api/repetidas',{})).grupos;drep();if(!RG.length)$('#rep').innerHTML=`<div class="empty">${WAVE}<p>Nenhuma repetida encontrada.</p></div>`}catch(e){toast(e.message)}b.disabled=false;b.textContent='Procurar repetidas'};
