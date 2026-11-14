@@ -1676,7 +1676,7 @@ def trabalhador(idx=0):
                             it.update(status="fila", cancel=False, pct=0, vel="", erro="")
                         salvar_fila()
                     else:
-                        dev_log("cancelada", "%s (motivo: %s)" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:120]))
+                        dev_log("cancelada", "%s (interrompida pelo usuário; detalhe interno: %s)" % ((it.get("titulo") or it.get("url") or "")[:60], erro[:120]))
                         marcar(it, "cancelada")
                 else:
                     bloqueado = tratar_falha(it, erro)
@@ -3146,7 +3146,7 @@ async function libAtual(forca){
  catch(e){}
  LIBBUSY=0}
 setInterval(()=>libAtual(0),6000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)libAtual(1)});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();libAtual(1)}});window.addEventListener('focus',()=>tick());
 async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIBSIG=libSig(d);LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
