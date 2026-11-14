@@ -150,11 +150,6 @@ def bloqueio_youtube(m):
     return "not a bot" in m or "sign in to confirm" in m
 
 
-def passageiro(m):
-    m = m.lower()
-    return bloqueio_youtube(m) or any(x in m for x in ("403", "timed out", "timeout", "connection", "temporar", "http error 5", "unable to download"))
-
-
 def calcular_pausa(qtd):
     return 1 if qtd <= 30 else 2 if qtd <= 70 else 3 if qtd <= 120 else 5
 

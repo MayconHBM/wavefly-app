@@ -5,7 +5,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -50,59 +49,10 @@ class SplashView extends android.view.View {
         return System.currentTimeMillis() - inicio;
     }
 
-    private void reel(Canvas c, float cx, float cy, float raio, float graus) {
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF6B4228);
-        c.drawCircle(cx, cy, raio, p);
-        c.save();
-        c.rotate(graus, cx, cy);
-        p.setColor(0xFFF1DFB8);
-        c.drawCircle(cx, cy, raio * 0.62f, p);
-        p.setColor(0xFF4A2A17);
-        p.setStrokeWidth(raio * 0.12f);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        for (int i = 0; i < 3; i++) {
-            c.save();
-            c.rotate(i * 60f, cx, cy);
-            c.drawLine(cx, cy - raio * 0.5f, cx, cy + raio * 0.5f, p);
-            c.restore();
-        }
-        c.restore();
-    }
-
-    private void nota(Canvas c, float x, float y, float u, int cor) {
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(cor);
-        c.drawOval(x - 2.2f * u, y - 1.6f * u, x + 2.2f * u, y + 1.6f * u, p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.9f * u);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        c.drawLine(x + 2f * u, y, x + 2f * u, y - 7f * u, p);
-        c.drawLine(x + 2f * u, y - 7f * u, x + 5f * u, y - 5.5f * u, p);
-        p.setStyle(Paint.Style.FILL);
-    }
-
-    private void parafuso(Canvas c, float x, float y, float u, float ang) {
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFB89A66);
-        c.drawCircle(x, y, 1.7f * u, p);
-        p.setColor(0xFF4A2A17);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(0.5f * u);
-        c.save();
-        c.rotate(ang, x, y);
-        c.drawLine(x - 1.1f * u, y, x + 1.1f * u, y, p);
-        c.restore();
-        p.setStyle(Paint.Style.FILL);
-    }
-
     @Override
     protected void onDraw(Canvas c) {
         float w = getWidth(), h = getHeight();
         float cw = Math.min(w * 0.72f, 520f * getResources().getDisplayMetrics().density / 2.4f);
-        float ch = cw * 0.64f;
-        float cy0 = h * 0.36f;
-        float x0 = (w - cw) / 2f, y0 = cy0 - ch / 2f;
         float u = cw / 80f;
         double T = t * 2 * Math.PI;
 

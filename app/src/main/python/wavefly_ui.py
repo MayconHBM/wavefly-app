@@ -12,27 +12,27 @@ DICT = [
     ("Rápido", "Fast", "Rápido"),
     ("Normal", "Normal", "Normal"),
     ("músicas", "songs", "canciones"),
-    ("Cassete", "Cassette", "Casete"), ("Onda W", "W wave", "Onda W"), ("Vinil", "Vinyl", "Vinilo"), ("Avião", "Paper plane", "Avión de papel"),
+       
     ("Ajustes do modo rápido", "Fast mode settings", "Ajustes del modo rápido"),
     ("Downloads ao mesmo tempo", "Simultaneous downloads", "Descargas simultáneas"),
     ("Conversões ao mesmo tempo", "Simultaneous conversions", "Conversiones simultáneas"),
     ("Leitura leve de informações", "Light info reading", "Lectura ligera de información"),
     ("Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal.", "More at once = faster, but the phone gets hotter and YouTube may block more easily. If it blocks, the automatic brake returns to normal pace.", "Más a la vez = más rápido, pero el teléfono se calienta más y YouTube puede bloquear. Si bloquea, el freno automático vuelve al ritmo normal."),
-    ("Ícone do app (teste)", "App icon (test)", "Icono de la app (prueba)"),
-    ("Escolha um. O ícone na tela inicial pode levar alguns segundos para trocar.", "Pick one. The home screen icon may take a few seconds to change.", "Elige uno. El icono de la pantalla de inicio puede tardar unos segundos."),
-    ("Ícone trocado. Pode levar alguns segundos.", "Icon changed. It may take a few seconds.", "Icono cambiado. Puede tardar unos segundos."),
+    
+    
+    
     ("Padrão", "Default", "Predeterminado"), ("Fita", "Tape", "Cinta"), ("Fone", "Headphones", "Auriculares"), ("Nota", "Note", "Nota"),
     ("Tempo médio por música", "Average time per song", "Tiempo medio por canción"),
     ("Contagem", "Count", "Recuento"),
     ("Aparelho", "Device", "Dispositivo"),
     ("Registro", "Log", "Registro"),
     ("Vale para downloads em MP3: baixa e converte várias músicas ao mesmo tempo (você escolhe quantas), com esperas curtas, e grava título e capa direto no arquivo. Se o YouTube bloquear, volta sozinho ao ritmo normal.", "Applies to MP3 downloads: downloads and converts several songs at once (you choose how many), with short waits, and writes title and cover straight into the file. If YouTube blocks, it returns to the normal pace by itself.", "Vale para descargas en MP3: descarga y convierte varias canciones a la vez (tú eliges cuántas), con esperas cortas, y escribe título y portada en el archivo. Si YouTube bloquea, vuelve solo al ritmo normal."),
-    ("Explorar", "Explore", "Explorar"),
-    ("Descubra músicas e estilos novos. Toque para ouvir, sem baixar nada.", "Discover new music and styles. Tap to listen, nothing is downloaded.", "Descubre música y estilos nuevos. Toca para escuchar, sin descargar nada."),
-    ("Descobrir", "Discover", "Descubrir"),
-    ("Favoritas", "Favorites", "Favoritas"),
-    ("Favorita", "Favorite", "Favorita"),
-    ("Favoritar", "Favorite", "Favorita"),
+    
+    
+    
+    
+    
+    
     ("Carregar mais", "Load more", "Cargar más"),
     ("Carregando…", "Loading…", "Cargando…"),
     ("Só áudio", "Audio only", "Solo audio"),
@@ -42,27 +42,27 @@ DICT = [
     ("Cancelar seleção", "Cancel selection", "Cancelar selección"),
     ("Selecionar tudo", "Select all", "Seleccionar todo"),
     ("Remover", "Remove", "Quitar"),
-    ("Nenhuma favorita ainda. Toque no coração de uma música.", "No favorites yet. Tap the heart on a song.", "Aún no hay favoritas. Toca el corazón de una canción."),
-    ("Nada encontrado agora. Tente de novo.", "Nothing found right now. Try again.", "No se encontró nada ahora. Inténtalo de nuevo."),
-    ("Não foi possível reproduzir. Tente outra.", "Could not play. Try another one.", "No se pudo reproducir. Prueba otra."),
-    ("Adicionada às favoritas", "Added to favorites", "Añadida a favoritas"),
-    ("Removida das favoritas", "Removed from favorites", "Quitada de favoritas"),
-    ("Removidas das favoritas", "Removed from favorites", "Quitadas de favoritas"),
-    ("Adicionada à fila", "Added to queue", "Añadida a la cola"),
-    ("Este vídeo ao vivo não pode ser transmitido.", "This live video cannot be streamed.", "Este vídeo en vivo no se puede transmitir."),
-    ("Surpreenda-me", "Surprise me", "Sorpréndeme"),
-    ("Rap e Hip-hop", "Rap & Hip-hop", "Rap y Hip-hop"),
-    ("Eletrônica", "Electronic", "Electrónica"),
-    ("Lo-fi e Chill", "Lo-fi & Chill", "Lo-fi y Chill"),
-    ("Jazz e Blues", "Jazz & Blues", "Jazz y Blues"),
-    ("Latina", "Latin", "Latina"),
-    ("K-pop e J-pop", "K-pop & J-pop", "K-pop y J-pop"),
-    ("Forró e Pagode", "Forró & Pagode", "Forró y Pagode"),
-    ("Clássica", "Classical", "Clásica"),
-    ("Do mundo", "World", "Del mundo"),
-    ("MPB", "Brazilian music (MPB)", "MPB"),
-    ("Sertanejo", "Sertanejo", "Sertanejo"),
-    ("Reggae", "Reggae", "Reggae"),
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     ("Baixar", "Download", "Descargar"), ("Buscar", "Search", "Buscar"), ("Biblioteca", "Library", "Biblioteca"),
     ("Cole links do YouTube para gerenciar seus downloads.", "Paste YouTube links to manage your downloads.", "Pega enlaces de YouTube para gestionar tus descargas."),
     ("Para organizar suas músicas, precisamos de acesso à pasta de destino.", "To organize your music, we need access to the destination folder.", "Para organizar tu música, necesitamos acceso a la carpeta de destino."),
@@ -152,23 +152,23 @@ DICT = [
     ("convertendo…", "converting…", "convirtiendo…"), ("juntando…", "merging…", "uniendo…"),
     ("YouTube bloqueou temporariamente (confirmação necessária)", "YouTube temporarily blocked this (confirmation required)", "YouTube lo bloqueó temporalmente (se requiere confirmación)"),
     # novos
-    ("Idioma", "Language", "Idioma"), ("Botão flutuante", "Floating button", "Botón flotante"),
-    ("Ativar botão flutuante", "Enable floating button", "Activar botón flotante"),
-    ("Fica sobre os outros apps: copie o link do vídeo e toque nele para baixar.", "Stays on top of other apps: copy the video link and tap it to download.", "Se queda sobre otras apps: copia el enlace del vídeo y tócalo para descargar."),
+    ("Idioma", "Language", "Idioma"), 
+    
+    
     ("Atualizações", "Updates", "Actualizaciones"), ("Procurar atualizações", "Check for updates", "Buscar actualizaciones"),
-    ("Sugestões a partir das suas músicas. Tudo fica neste aparelho.", "Suggestions based on your music. Everything stays on this device.", "Sugerencias según tu música. Todo se queda en este dispositivo."),
-    ("Procurando sugestões…", "Finding suggestions…", "Buscando sugerencias…"), ("Adicionada", "Added", "Añadida"),
-    ("Não foi possível carregar as sugestões agora.", "Could not load suggestions right now.", "No se pudieron cargar las sugerencias ahora."),
+    
+     ("Adicionada", "Added", "Añadida"),
+    
     ("Não mostrar este aviso novamente", "Don't show this notice again", "No mostrar este aviso de nuevo"),
     ("Como usar", "How to use", "Cómo usar"),
     ("Pausar tudo", "Pause all", "Pausar todo"), ("Continuar", "Resume", "Continuar"),
     ("Downloads pausados.", "Downloads paused.", "Descargas en pausa."), ("Registro copiado", "Log copied", "Registro copiado"),
     ("Informações", "Info", "Información"), ("Conversão", "Conversion", "Conversión"), ("Espera", "Wait", "Espera"),
-    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Link inválido · não dá para baixar", "Invalid link · can't be downloaded", "Enlace no válido · no se puede descargar"), ("Vídeo inexistente ou indisponível · não dá para baixar", "Video doesn't exist or is unavailable · can't be downloaded", "El video no existe o no está disponible · no se puede descargar"), ("Relatório copiado", "Report copied", "Informe copiado"), ("Limpar o registro? Isso não pode ser desfeito.", "Clear the log? This can't be undone.", "¿Borrar el registro? No se puede deshacer."), ("Escreva uma mensagem antes de enviar", "Write a message before sending", "Escribe un mensaje antes de enviar"), ("Não achei um app de e-mail. Texto copiado: envie para contato.wavefly@gmail.com", "No email app found. Text copied: send it to contato.wavefly@gmail.com", "No encontré una app de correo. Texto copiado: envíalo a contato.wavefly@gmail.com"), ("Problemas ou sugestões?", "Problems or suggestions?", "¿Problemas o sugerencias?"), ("Escreva aqui o que aconteceu ou o que você gostaria de ver. Vamos olhar.", "Write here what happened or what you would like to see. We will take a look.", "Escribe aquí lo que pasó o lo que te gustaría ver. Lo revisaremos."), ("Incluir informações técnicas (versão, aparelho e últimos eventos)", "Include technical info (version, device and latest events)", "Incluir información técnica (versión, dispositivo y últimos eventos)"), ("Escreva aqui…", "Write here…", "Escribe aquí…"), ("Copiar tudo", "Copy all", "Copiar todo"), ("Enviar", "Send", "Enviar"), ("Sempre", "Always", "Siempre"), ("Músicas longas", "Long songs", "Canciones largas"), ("Baixar até (minutos)", "Download up to (minutes)", "Descargar hasta (minutos)"), ("Músicas em MP3 acima do limite (com 3 minutos de margem) são puladas e aparecem como “Longa demais”. “Sempre” baixa qualquer duração. As curtas são baixadas primeiro.", "MP3 songs above the limit (with a 3-minute margin) are skipped and shown as “Too long”. “Always” downloads any length. Short ones are downloaded first.", "Las canciones MP3 por encima del límite (con 3 minutos de margen) se omiten y aparecen como “Demasiado larga”. “Siempre” descarga cualquier duración. Las cortas se descargan primero."), ("Economia", "Economy", "Economía"), ("Equilibrado", "Balanced", "Equilibrado"), ("Máximo", "Maximum", "Máximo"), ("Personalizado", "Custom", "Personalizado"), ("Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal. Downloads: o limite é o YouTube (bloqueio). Conversões: o limite é o processador do celular.", "More at once = faster, but the phone gets hotter and YouTube may block more easily. If it blocks, the automatic brake returns to normal pace. Downloads: the limit is YouTube (blocking). Conversions: the limit is the phone processor.", "Más a la vez = más rápido, pero el teléfono se calienta más y YouTube puede bloquear. Si bloquea, el freno automático vuelve al ritmo normal. Descargas: el límite es YouTube (bloqueo). Conversiones: el límite es el procesador del teléfono."), ("Predefinições", "Presets", "Preajustes"), ("Condições para baixar", "Download conditions", "Condiciones para descargar"), ("Só no Wi-Fi", "Wi-Fi only", "Solo con Wi-Fi"), ("Só carregando", "Only while charging", "Solo cargando"), ("Bateria mínima", "Minimum battery", "Batería mínima"), ("Desl.", "Off", "Apag."), ("Se uma condição não for atendida, o app não inicia novas músicas e avisa o motivo; o que já está baixando termina. Volta sozinho quando a condição for atendida. Com o carregador conectado, a bateria mínima não vale. Bateria mínima 0% = desligada.", "If a condition isn't met, the app doesn't start new songs and tells you why; what is already downloading finishes. It resumes by itself when the condition is met. With the charger connected, the minimum battery doesn't apply. Minimum battery 0% = off.", "Si no se cumple una condición, la app no inicia canciones nuevas y avisa el motivo; lo que ya se está descargando termina. Continúa solo cuando se cumpla. Con el cargador conectado, la batería mínima no se aplica. Batería mínima 0% = desactivada."), ("Aguardando Wi-Fi…", "Waiting for Wi-Fi…", "Esperando Wi-Fi…"), ("Aguardando o carregador…", "Waiting for the charger…", "Esperando el cargador…"), ("Último lote", "Last batch", "Último lote"), ("Fila (detalhe)", "Queue (details)", "Cola (detalle)"), ("Temperatura", "Temperature", "Temperatura"), ("térmico", "thermal", "térmico"), ("Duração", "Duration", "Duración"), ("Estado térmico (máx.)", "Thermal state (max)", "Estado térmico (máx.)"), ("Configuração", "Setting", "Configuración"), ("rápido", "fast", "rápido"), ("normal", "normal", "normal"), ("Sem lotes ainda.", "No batches yet.", "Aún no hay lotes."), ("Fila vazia.", "Queue empty.", "Cola vacía."), ("Player e notificação", "Player and notification", "Reproductor y notificación"), ("Pulo dos botões (segundos)", "Button skip (seconds)", "Salto de los botones (segundos)"), ("Capa na notificação", "Cover in notification", "Portada en la notificación"), ("Esquerda", "Left", "Izquierda"), ("Direita", "Right", "Derecha"), ("Ao fundo", "Background", "De fondo"), ("⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.", "⏮ restarts the song if it is past 3 seconds; a second tap goes to the previous one. Songs of 10 minutes or more resume where they stopped.", "⏮ reinicia la canción si pasaron más de 3 segundos; un segundo toque va a la anterior. Las canciones de 10 minutos o más continúan donde se detuvieron."), ("Ordem: padrão", "Order: default", "Orden: predeterminado"), ("Mais recentes primeiro", "Newest first", "Más recientes primero"), ("Mais antigas primeiro", "Oldest first", "Más antiguas primero"), ("Nome A–Z", "Name A–Z", "Nombre A–Z"), ("Nome Z–A", "Name Z–A", "Nombre Z–A"), ("Mais longas primeiro", "Longest first", "Más largas primero"), ("Mais curtas primeiro", "Shortest first", "Más cortas primero"), ("Maiores primeiro", "Largest first", "Más grandes primero"), ("Menores primeiro", "Smallest first", "Más pequeños primero"), ("Editar", "Edit", "Editar"), ("Editar música", "Edit song", "Editar canción"), ("O nome do arquivo muda junto com o título.", "The file name changes along with the title.", "El nombre del archivo cambia junto con el título."), ("Título", "Title", "Título"), ("Artista", "Artist", "Artista"), ("Capa", "Cover", "Portada"), ("Escolher imagem", "Choose image", "Elegir imagen"), ("Remover capa", "Remove cover", "Quitar portada"), ("Salvar", "Save", "Guardar"), ("Música atualizada.", "Song updated.", "Canción actualizada."), ("Escreva o título.", "Write the title.", "Escribe el título."), ("Só dá para editar MP3 e M4A.", "Only MP3 and M4A can be edited.", "Solo se pueden editar MP3 y M4A."), ("Mediana (total)", "Median (total)", "Mediana (total)"), ("Mediana (conversão)", "Median (conversion)", "Mediana (conversión)"), ("Amostra", "Sample", "Muestra"),
+    ("Músicas por hora", "Songs per hour", "Canciones por hora"), ("Link inválido · não dá para baixar", "Invalid link · can't be downloaded", "Enlace no válido · no se puede descargar"), ("Vídeo inexistente ou indisponível · não dá para baixar", "Video doesn't exist or is unavailable · can't be downloaded", "El video no existe o no está disponible · no se puede descargar"), ("Relatório copiado", "Report copied", "Informe copiado"), ("Limpar o registro? Isso não pode ser desfeito.", "Clear the log? This can't be undone.", "¿Borrar el registro? No se puede deshacer."),      ("Copiar tudo", "Copy all", "Copiar todo"),  ("Sempre", "Always", "Siempre"), ("Músicas longas", "Long songs", "Canciones largas"), ("Baixar até (minutos)", "Download up to (minutes)", "Descargar hasta (minutos)"), ("Músicas em MP3 acima do limite (com 3 minutos de margem) são puladas e aparecem como “Longa demais”. “Sempre” baixa qualquer duração. As curtas são baixadas primeiro.", "MP3 songs above the limit (with a 3-minute margin) are skipped and shown as “Too long”. “Always” downloads any length. Short ones are downloaded first.", "Las canciones MP3 por encima del límite (con 3 minutos de margen) se omiten y aparecen como “Demasiado larga”. “Siempre” descarga cualquier duración. Las cortas se descargan primero."), ("Economia", "Economy", "Economía"), ("Equilibrado", "Balanced", "Equilibrado"), ("Máximo", "Maximum", "Máximo"), ("Personalizado", "Custom", "Personalizado"), ("Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal. Downloads: o limite é o YouTube (bloqueio). Conversões: o limite é o processador do celular.", "More at once = faster, but the phone gets hotter and YouTube may block more easily. If it blocks, the automatic brake returns to normal pace. Downloads: the limit is YouTube (blocking). Conversions: the limit is the phone processor.", "Más a la vez = más rápido, pero el teléfono se calienta más y YouTube puede bloquear. Si bloquea, el freno automático vuelve al ritmo normal. Descargas: el límite es YouTube (bloqueo). Conversiones: el límite es el procesador del teléfono."), ("Predefinições", "Presets", "Preajustes"), ("Condições para baixar", "Download conditions", "Condiciones para descargar"), ("Só no Wi-Fi", "Wi-Fi only", "Solo con Wi-Fi"), ("Só carregando", "Only while charging", "Solo cargando"), ("Bateria mínima", "Minimum battery", "Batería mínima"), ("Desl.", "Off", "Apag."), ("Se uma condição não for atendida, o app não inicia novas músicas e avisa o motivo; o que já está baixando termina. Volta sozinho quando a condição for atendida. Com o carregador conectado, a bateria mínima não vale. Bateria mínima 0% = desligada.", "If a condition isn't met, the app doesn't start new songs and tells you why; what is already downloading finishes. It resumes by itself when the condition is met. With the charger connected, the minimum battery doesn't apply. Minimum battery 0% = off.", "Si no se cumple una condición, la app no inicia canciones nuevas y avisa el motivo; lo que ya se está descargando termina. Continúa solo cuando se cumpla. Con el cargador conectado, la batería mínima no se aplica. Batería mínima 0% = desactivada."), ("Aguardando Wi-Fi…", "Waiting for Wi-Fi…", "Esperando Wi-Fi…"), ("Aguardando o carregador…", "Waiting for the charger…", "Esperando el cargador…"), ("Último lote", "Last batch", "Último lote"), ("Fila (detalhe)", "Queue (details)", "Cola (detalle)"), ("Temperatura", "Temperature", "Temperatura"), ("térmico", "thermal", "térmico"), ("Duração", "Duration", "Duración"), ("Estado térmico (máx.)", "Thermal state (max)", "Estado térmico (máx.)"), ("Configuração", "Setting", "Configuración"), ("rápido", "fast", "rápido"), ("normal", "normal", "normal"), ("Sem lotes ainda.", "No batches yet.", "Aún no hay lotes."), ("Fila vazia.", "Queue empty.", "Cola vacía."), ("Player e notificação", "Player and notification", "Reproductor y notificación"), ("Pulo dos botões (segundos)", "Button skip (seconds)", "Salto de los botones (segundos)"), ("Capa na notificação", "Cover in notification", "Portada en la notificación"), ("Esquerda", "Left", "Izquierda"), ("Direita", "Right", "Derecha"), ("Ao fundo", "Background", "De fondo"), ("⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.", "⏮ restarts the song if it is past 3 seconds; a second tap goes to the previous one. Songs of 10 minutes or more resume where they stopped.", "⏮ reinicia la canción si pasaron más de 3 segundos; un segundo toque va a la anterior. Las canciones de 10 minutos o más continúan donde se detuvieron."), ("Ordem: padrão", "Order: default", "Orden: predeterminado"), ("Mais recentes primeiro", "Newest first", "Más recientes primero"), ("Mais antigas primeiro", "Oldest first", "Más antiguas primero"), ("Nome A–Z", "Name A–Z", "Nombre A–Z"), ("Nome Z–A", "Name Z–A", "Nombre Z–A"), ("Mais longas primeiro", "Longest first", "Más largas primero"), ("Mais curtas primeiro", "Shortest first", "Más cortas primero"), ("Maiores primeiro", "Largest first", "Más grandes primero"), ("Menores primeiro", "Smallest first", "Más pequeños primero"), ("Editar", "Edit", "Editar"), ("Editar música", "Edit song", "Editar canción"), ("O nome do arquivo muda junto com o título.", "The file name changes along with the title.", "El nombre del archivo cambia junto con el título."), ("Título", "Title", "Título"), ("Artista", "Artist", "Artista"), ("Capa", "Cover", "Portada"), ("Escolher imagem", "Choose image", "Elegir imagen"), ("Remover capa", "Remove cover", "Quitar portada"), ("Salvar", "Save", "Guardar"), ("Música atualizada.", "Song updated.", "Canción actualizada."), ("Escreva o título.", "Write the title.", "Escribe el título."), ("Só dá para editar MP3 e M4A.", "Only MP3 and M4A can be edited.", "Solo se pueden editar MP3 y M4A."), ("Mediana (total)", "Median (total)", "Mediana (total)"), ("Mediana (conversão)", "Median (conversion)", "Mediana (conversión)"), ("Amostra", "Sample", "Muestra"),
     ("Sem medidas ainda. Baixe algumas músicas.", "No measurements yet. Download a few songs.", "Aún sin mediciones. Descarga algunas canciones."),
     ("Falhas", "Failures", "Fallos"), ("Bateria", "Battery", "Batería"), ("Memória do app", "App memory", "Memoria de la app"),
     ("Rede", "Network", "Red"), ("Sem eventos.", "No events.", "Sin eventos."), ("Desenvolvedor", "Developer", "Desarrollador"),
-    ("Esconder", "Hide", "Ocultar"), ("Painel do desenvolvedor", "Developer panel", "Panel de desarrollador"),
+     ("Painel do desenvolvedor", "Developer panel", "Panel de desarrollador"),
     ("Download mais rápido", "Faster download", "Descarga más rápida"), ("Copiar registro", "Copy log", "Copiar registro"),
     ("Anterior", "Previous", "Anterior"), ("Ouvir", "Listen", "Escuchar"),
     ("Transmissão ao vivo: não dá para baixar", "Live stream: it can't be downloaded", "Transmisión en vivo: no se puede descargar"),

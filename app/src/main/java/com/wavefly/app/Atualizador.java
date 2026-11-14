@@ -7,9 +7,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.net.ConnectivityManager;
 import android.net.Uri;
-import android.os.Build;
 import android.widget.Toast;
 
 import org.json.JSONArray;
@@ -139,12 +137,4 @@ final class Atualizador {
         }
     }
 
-    static boolean redeCara(Context c) {
-        try {
-            ConnectivityManager cm = (ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
-            return cm != null && cm.isActiveNetworkMetered();
-        } catch (Throwable t) {
-            return false;
-        }
-    }
 }
