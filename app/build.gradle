@@ -13,8 +13,8 @@ android {
         // targetSdk 28 de propósito: permite rodar o ffmpeg embutido e gravar em Download/WaveFly
         // (mesmo modelo do Termux). O app é instalado por APK, fora da Play Store.
         targetSdk 28
-        versionCode 30
-        versionName "1.7.12-teste"
+        versionCode 31
+        versionName "1.7.13-teste"
         ndk {
             abiFilters "arm64-v8a"
         }

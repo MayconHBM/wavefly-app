@@ -2847,6 +2847,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 
 <div id="pl" class="aud" data-st="stop" hidden>
   <div class="pt"><div class="ptx"><div class="tt" id="plt" style="font-weight:700"></div><div class="sm tt" id="pls"></div></div><button class="rb4" id="bvol" aria-label="Volume" data-i="vol"></button><button class="rb4" id="bfs" aria-label="Tela cheia" data-i="full"></button><button class="rb4" id="plx" aria-label="Fechar" data-i="x"></button></div>
+  <div class="pcv" id="pcv"><span id="pcvg"></span><img id="pcvi" alt=""></div>
   <div class="vwrap"><div class="vm" id="tv-screen"></div></div>
   <div class="tl"><b id="tcur">00:00</b><div class="ptrack" id="ptrack"><i id="pfill"></i></div><b id="tdur">--:--</b></div>
   <hr>
@@ -2907,7 +2908,10 @@ const I={
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${I[n]}</svg>`;
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
 const WAVE='<svg viewBox="0 0 76 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="70" height="42" rx="6"/><rect x="11" y="9" width="54" height="14" rx="2"/><rect x="20" y="28" width="36" height="11" rx="5.5"/><circle cx="29" cy="33.5" r="2.6"/><circle cx="47" cy="33.5" r="2.6"/></svg>';
-const cov=(rel,isVid,cls,icn)=>`<span class="cv ${cls||''}${isVid?' vd':''}">${ic(icn||(isVid?'video':'note'))}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}&v=${CAPAV.v}" alt="" onerror="covErr(this)" onload="this.style.display=''"></span>`;
+const gh=n=>{let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))>>>0;return h%360};
+const cov=(rel,isVid,cls,icn)=>{const gen=!isVid&&!icn;let st='',ico=ic(icn||(isVid?'video':'note'));
+ if(gen){const nm=String(rel).split('/').pop().replace(/\.[^.]+$/,''),m=nm.match(/[\p{L}\p{N}]/u);if(m){ico=`<b class="cl">${esc(m[0].toUpperCase())}</b>`;st=` style="background:hsl(${gh(nm)} 42% 36%)"`}}
+ return `<span class="cv ${cls||''}${isVid?' vd':''}${st?' g':''}"${st}>${ico}<img loading="lazy" decoding="async" src="/api/capa?f=${encodeURIComponent(rel)}&v=${CAPAV.v}" alt="" onerror="covErr(this)" onload="this.style.display='';this.dataset.ok=1"></span>`};
 function covErr(im){const n=+(im.dataset.n||0);if(n>=3){im.style.display='none';return}im.dataset.n=n+1;
  if(!im.dataset.b)im.dataset.b=im.getAttribute('src');
  setTimeout(()=>{if(im.isConnected)im.src=im.dataset.b+'&r='+Date.now()},1500*(n+1))}
@@ -3065,6 +3069,7 @@ $('#bgo').onclick=async()=>{const t=$('#ta').value,r=parse(t);try{
   toast(m);tick()}
  catch(e){toast(e.message)}b.disabled=false;cnt()};
 
+const SEENQ=new Set(),DONEQ=new Set();
 function rowHTML(i){let sub='',cls='';
  if(i.status==='baixando')sub=(i.vel&&/Lendo|Convertendo|Juntando|Baixando/.test(i.vel)?i.vel:(i.pct||0)+'%'+(i.vel?' · '+i.vel:''));
  else if(i.status==='falha'){sub='Falhou: '+(i.erro||'erro');cls=' er'}
@@ -3078,7 +3083,8 @@ function rowHTML(i){let sub='',cls='';
  if(i.status==='ok'&&i.arq&&C.servidor)a+=`<a class="t" style="color:var(--at);font-size:13.5px;padding:4px 6px" href="/api/baixar?f=${encodeURIComponent(i.arq)}" download>Receber</a>`;
  a+=`<button class="t" data-a="remover" data-id="${i.id}">${i.status==='baixando'?'Cancelar':'Remover'}</button>`;
  const v=vidOf(i.url),th=v?`<img class="ft" loading="lazy" src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`:'<span class="ft"></span>';
- return `<div class="it" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
+ let an='';if(!SEENQ.has(i.id)){SEENQ.add(i.id);an=' nw'}if(i.status==='ok'&&!DONEQ.has(i.id)){DONEQ.add(i.id);if(an===''&&SEENQ.size>1)an=' dn'}
+ return `<div class="it${an}" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
 const ORD={baixando:0,fila:1,falha:2,duplicada:3,cancelada:4,ok:5};
 function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada,at=s.fila+s.baixando>0;
  if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt();libAtual(1)}}
@@ -3198,12 +3204,12 @@ function dlib(){
  }
  const totalLib = ACTIVE_PL ? LIBQ.length : mus.length;
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
- $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p></div>`;
+ $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">Baixe uma música na aba Baixar e ela aparece aqui.</p></div>`;
 
  let vids = ordena(LIB.videos || []);
  if(fv) vids = vids.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(fv));
  LIBQV=vids.map(x=>x.rel);
- $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p></div>`;
+ $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p><p class="sm">Vídeos baixados em MP4 aparecem aqui.</p></div>`;
  if(vids.length>LIBNV) $('#libv').insertAdjacentHTML('beforeend',`<div id="libvmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBNV} de ${vids.length} · role para ver mais</div>`);
  try{if(LIBIO)LIBIO.disconnect();LIBIO=new IntersectionObserver(es=>{es.forEach(en=>{if(!en.isIntersecting)return;if(en.target.id==='libmais'){LIBN+=60}else{LIBNV+=60}dlib()})},{rootMargin:'600px'});['libmais','libvmais'].forEach(i=>{const el=document.getElementById(i);if(el)LIBIO.observe(el)})}catch(e){}
 
@@ -3241,6 +3247,17 @@ const MA=()=>$('#au');
 const tf=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+':'+p2(m)+':'+p2(x):p2(m)+':'+p2(x)};
 function marcarNow(){$$('#lib .lr,#libv .lr').forEach(r=>{const b=r.querySelector('[data-playrel]');r.classList.toggle('now',!!b&&!!CUR&&b.dataset.playrel===CUR)})}
 function proxima(d){const i=QUEUE.indexOf(CUR),n=i<0?null:QUEUE[i+d];if(n)tocar(n);else if(d>0)stopPlayer()}
+function hsl2rgb(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};return[f(0),f(8),f(4)]}
+function plCor(im){try{const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.drawImage(im,0,0,16,16);const d=x.getImageData(0,0,16,16).data;let r=0,g=0,b=0,w=0;for(let i=0;i<d.length;i+=4){const R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B),sa=mx?(mx-mn)/mx:0,k=Math.max(.05,.15+sa*sa);r+=R*k;g+=G*k;b+=B*k;w+=k}return[r/w,g/w,b/w]}catch(e){return null}}
+function plTema(c){const r=c[0],g=c[1],b=c[2],m=Math.max(r,g,b,1),mn=Math.min(r,g,b),sat=(m-mn)/m,f=Math.min(3,235/m),a=sat<.1?[235,235,235]:[r*f,g*f,b*f].map(Math.round),p=$('#pl').style;
+ p.setProperty('--pcb',[r,g,b].map(v=>Math.round(v*.34)).join(','));p.setProperty('--pcb2',[r,g,b].map(v=>Math.round(v*.17)).join(','));p.setProperty('--pca',a.join(','));
+ $('#pl').classList.add('cc');document.documentElement.style.setProperty('--npb','rgba('+a.join(',')+',.2)');document.body.classList.add('pcc')}
+function plSemTema(){$('#pl').classList.remove('cc');document.body.classList.remove('pcc')}
+function plCapa(x,capa,vid){const im=$('#pcvi'),g=$('#pcvg');im.classList.remove('on');im.removeAttribute('src');
+ const nome=x.nome||'',m=nome.match(/[\p{L}\p{N}]/u),h=gh(nome);g.textContent=m?m[0].toUpperCase():'♪';g.style.background='hsl('+h+' 42% 36%)';
+ if(vid){plSemTema();return}
+ plTema(hsl2rgb(h,.5,.5));
+ const t=new Image(),tk=CUR;t.onload=()=>{if(CUR!==tk)return;im.src=t.src;im.classList.add('on');const c=plCor(t);if(c)plTema(c)};t.src=capa+'&v='+CAPAV.v}
 function plState(st){const p=$('#pl');p.dataset.st=st;p.classList.toggle('rodando',st==='play');const b=$('#bplay');b.innerHTML=ic(st==='play'?'pause':'play');b.setAttribute('aria-label',st==='play'?'Pausar':'Tocar')}
 function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.duration:0,c=a.currentTime||0,pc=d?Math.min(1,c/d):0;
  $('#tcur').textContent=tf(c);$('#tdur').textContent=d?tf(d):'--:--';$('#pfill').style.width=(pc*100)+'%'}
@@ -3250,7 +3267,7 @@ function tocar(rel,box){
  if(box)QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);
  const vid=/\.(mp4|mkv)$/i.test(rel),url='/api/audio?f='+encodeURIComponent(rel),capa='/api/capa?f='+encodeURIComponent(rel);
  CUR=rel;
- $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');
+ $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
  $('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';ST_STOP=false;
  (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;
@@ -3281,10 +3298,12 @@ try{new ResizeObserver(()=>document.documentElement.style.setProperty('--plh',($
 function stopPlayer(){
  const a=MA();if(a){ST_STOP=true;a.pause();a.removeAttribute('src');a.load()}
  $('#pl').hidden=true;$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
- $('#pl').classList.remove('rodando');document.body.classList.remove('pon');CUR='';marcarNow()
+ $('#pl').classList.remove('rodando');document.body.classList.remove('pon');plSemTema();CUR='';marcarNow()
 }
 function stopIf(r){if(CUR&&r.includes(CUR))stopPlayer()}
 $('#plx').onclick=stopPlayer;
+try{if(localStorage.getItem('wf_pmin')==='1')$('#pl').classList.add('min')}catch(e){}
+$('#plt').parentNode.onclick=()=>{const m=$('#pl').classList.toggle('min');try{localStorage.setItem('wf_pmin',m?'1':'0')}catch(e){}};
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
 $('#bsa').onclick=()=>{(LIBQ||[]).forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagado'+(r.apagadas===1?'':'s')+((r.falhas&&r.falhas.length)?' · '+r.falhas.length+' não deu: '+r.falhas[0]:''));JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
@@ -3640,6 +3659,35 @@ html body #pl{background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!importa
 html body #pl *{color:var(--t-tx)}
 html body #bvol,html body #vrow{display:none!important}
 html body #moldura{display:none!important}
+/* v37: capa grande no player, cor da capa, capa gerada, animações */
+.pcv{display:none;position:relative;width:min(54vw,30vh,210px);aspect-ratio:1;margin:2px auto 10px;border-radius:16px;overflow:hidden;box-shadow:0 8px 22px rgb(0 0 0 / .4)}
+#pl.aud:not(.min) .pcv{display:block}
+.pcv #pcvg{position:absolute;inset:0;display:grid;place-items:center;font:800 64px/1 ui-rounded,system-ui,sans-serif;color:#fff;text-shadow:0 2px 6px rgb(0 0 0 / .3)}
+.pcv #pcvi{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s}
+.pcv #pcvi.on{opacity:1}
+html body #pl.cc{background:linear-gradient(180deg,rgb(var(--pcb)),rgb(var(--pcb2)))!important;background-image:linear-gradient(180deg,rgb(var(--pcb)),rgb(var(--pcb2)))!important;border-color:rgba(var(--pca),.4)!important;color:#fff!important}
+html body #pl.cc *{color:#fff!important;text-shadow:none!important}
+html body #pl.cc .rb2,html body #pl.cc .rb4{border-color:rgba(255,255,255,.55)!important;background:transparent!important;box-shadow:none!important}
+html body #pl.cc #bplay{background:rgb(var(--pca))!important;background-image:none!important;border-color:rgb(var(--pca))!important;box-shadow:0 3px 10px rgba(0,0,0,.4)!important}
+html body #pl.cc #bplay *{color:rgb(var(--pcb2))!important}
+html body #pl.cc .ptrack{background:none!important;border:0!important;box-shadow:none!important}
+.cv img:not([data-ok]){visibility:hidden}
+html body #pl.cc .ptrack::before{background:rgba(255,255,255,.28)!important}
+html body #pl.cc #pfill{background:rgb(var(--pca))!important}
+html body #pl.cc hr{background:rgba(255,255,255,.18)!important}
+html body #pl.cc .tl b{background:none!important;border:0!important;padding:0!important}
+html body.pcc .lr.now{background:var(--npb)!important}
+.cv .cl{font:800 19px/1 ui-rounded,system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px rgb(0 0 0 / .3)}.cv.lg .cl{font-size:23px}
+.cv.g{color:#fff}
+.empty p{margin:4px 0;font-weight:600}.empty p.sm{font-weight:400;opacity:.8}
+.empty{animation:vin .5s ease-out}
+@keyframes vin{from{opacity:0}}
+@keyframes rin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes rok{0%{background:rgba(123,211,137,.35)}100%{background:transparent}}
+.v:not([hidden]){animation:vin .25s ease-out}
+.it.nw{animation:rin .35s ease-out}
+.it.dn{animation:rok 1.3s ease-out;border-radius:12px}
+@media(prefers-reduced-motion:reduce){.v:not([hidden]),.it.nw,.it.dn,.empty{animation:none}}
 html,body{-webkit-tap-highlight-color:transparent}
 html body::after{display:none!important}
 html body .tabs a,html body .tabs a:nth-child(2),html body .tabs a[data-go],html body .tabs a[href*="buscar"]{
