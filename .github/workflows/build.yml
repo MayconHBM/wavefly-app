@@ -1,0 +1,131 @@
+name: Gerar APK do WaveFly YT
+
+on:
+  push:
+    branches: [ main, 'ajustes-**' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Copiar libc++_shared.so do NDK (o ffmpeg precisa dela)
+        run: |
+          NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_ROOT}}"
+          echo "NDK=$NDK"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          A64=$(find "$NDK" -path '*aarch64-linux-android*' -name libc++_shared.so | head -1)
+          test -n "$A64" && cp "$A64" app/src/main/jniLibs/arm64-v8a/
+          ls -la app/src/main/jniLibs/*
+
+      - name: Preparar a chave de assinatura (segredos do repositório)
+        env:
+          KS_B64: ${{ secrets.WAVEFLY_KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.WAVEFLY_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PW" ]; then
+            echo "::error::Faltam os segredos WAVEFLY_KEYSTORE_BASE64 e WAVEFLY_KEYSTORE_PASSWORD (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/wavefly-release.p12"
+          echo "WAVEFLY_KEYSTORE=$RUNNER_TEMP/wavefly-release.p12" >> "$GITHUB_ENV"
+          echo "WAVEFLY_KEYSTORE_PASSWORD=$KS_PW" >> "$GITHUB_ENV"
+
+      - name: Compilar APK
+        run: gradle assembleRelease --stacktrace
+
+      - name: Relatório do conteúdo do APK
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          LIST=$(unzip -l "$APK" | grep -i "arm64-v8a" | awk '{print $1" "$4}' | tr '\n' ';')
+          echo "::notice title=libs-arm64::${LIST}"
+          ls ~/.gradle/caches/modules-2/files-2.1 | grep -i "junkfood\|yausername" | tr '\n' ';' | xargs -I{} echo "::notice title=deps::{}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaveFly-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Relatório do ffmpeg
+        run: |
+          AAR=$(find ~/.gradle/caches -name "ffmpeg-*.aar" | head -1)
+          mkdir -p /tmp/ff && cd /tmp/ff && unzip -o -q "$AAR" && cp jni/arm64-v8a/libffmpeg.so . 2>/dev/null
+          NEED=$(readelf -d jni/arm64-v8a/libffmpeg.so 2>&1 | grep -i "NEEDED\|RPATH\|RUNPATH" | sed 's/.*\[\(.*\)\]/\1/' | tr '\n' ',')
+          echo "::notice title=ffmpeg-needed::${NEED}"
+          mkdir -p z && cd z && unzip -o -q ../jni/arm64-v8a/libffmpeg.zip.so
+          cd /tmp && LAAR=$(find ~/.gradle/caches -name "library-0.18.1.aar" | head -1); echo "LAAR=$LAAR"
+          mkdir -p /tmp/lib && cd /tmp/lib && unzip -o -q "$LAAR" && ls jni/arm64-v8a | tr '\n' ',' | xargs -I{} echo "::notice title=library-jni::{}"
+          for Z in jni/arm64-v8a/*.zip.so; do unzip -o -q "$Z" -d /tmp/ff/z; done
+          Z1=$(zipinfo -v /tmp/ff/jni/arm64-v8a/libffmpeg.zip.so 2>/dev/null | grep -c . ); ZI=$(zipinfo /tmp/ff/jni/arm64-v8a/libffmpeg.zip.so | grep -i "libz\.so" | awk '{print $1" "$4" "$9}' | tr '\n' ';'); echo "::notice title=zip-libz-ffmpeg::${ZI}"
+          ZP=$(zipinfo /tmp/lib/jni/arm64-v8a/libpython.zip.so | grep -i "libz\.so" | awk '{print $1" "$4" "$9}' | tr '\n' ';'); echo "::notice title=zip-libz-python::${ZP}"
+          cd /tmp/ff
+          ZL=$(find . -type f | sed 's/^\.\///' | tr '\n' ',')
+          echo "::notice title=ffmpeg-zip::${ZL}"
+
+      - name: Relatório de bibliotecas que faltam
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess, glob
+          root = "/tmp/ff/z/usr/lib"
+          have = set(os.listdir(root)) | {"libc++_shared.so"}
+          have |= {os.path.basename(f) for f in glob.glob(root + "/**/*", recursive=True)}
+          sysl = {"libc.so","libm.so","libdl.so","liblog.so","libz.so","libandroid.so","libEGL.so","libGLESv1_CM.so","libGLESv2.so","libGLESv3.so","libOpenSLES.so","libOpenMAXAL.so","libmediandk.so","libvulkan.so","libcamera2ndk.so","libjnigraphics.so","libnativewindow.so","libstdc++.so","libbinder_ndk.so","libaaudio.so","libOpenCL.so"}
+          files = ["/tmp/ff/jni/arm64-v8a/libffmpeg.so", "/tmp/ff/jni/arm64-v8a/libffprobe.so"] + [f for f in glob.glob(root + "/*.so*") if not os.path.islink(f)]
+          falta = {}
+          # fecho real: só o que o ffmpeg realmente carrega, seguindo as dependências
+          def needs(f):
+              out = subprocess.run(["readelf","-d",f],capture_output=True,text=True).stdout
+              return re.findall(r"NEEDED.*\\[(.*)\\]", out)
+          visto, fila, cadeia = set(), [("/tmp/ff/jni/arm64-v8a/libffmpeg.so","ffmpeg")], {}
+          while fila:
+              f, pai = fila.pop()
+              for n in needs(f):
+                  if n in visto or n in sysl: continue
+                  visto.add(n)
+                  alvo = os.path.join(root, n)
+                  if os.path.exists(alvo): fila.append((os.path.realpath(alvo), n))
+                  else: cadeia[n] = pai
+          msg2 = ";".join(f"{k}<-{v}" for k, v in sorted(cadeia.items()))
+          print("::notice title=lib-faltando-real::" + (msg2 or "nenhuma"))
+          for f in files:
+              out = subprocess.run(["readelf","-d",f],capture_output=True,text=True).stdout
+              for n in re.findall(r"NEEDED.*\[(.*)\]", out):
+                  if n not in have and n not in sysl:
+                      falta.setdefault(n, []).append(os.path.basename(f))
+          msg = ";".join(f"{k}<-{','.join(v[:2])}" for k, v in sorted(falta.items()))
+          print("faltando:", msg)
+          print("::notice title=lib-faltando::" + (msg or "nenhuma"))
+          PY
+
+      - name: Publicar APK para baixar direto
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk WaveFly.apk
+          VC=$(grep -oP 'versionCode \K[0-9]+' app/build.gradle | head -1)
+          VN=$(grep -oP 'versionName "\K[^"]+' app/build.gradle | head -1)
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            gh release create "v${VN}" WaveFly.apk --title "WaveFly YT ${VN}" --notes "APK do WaveFly YT ${VN} (versionCode: ${VC})" --latest
+          else
+            # branch de teste: publica como pré-lançamento, sem virar a versão "mais recente"
+            gh release create "teste-${{ github.run_number }}" WaveFly.apk --target "${GITHUB_SHA}" --prerelease --latest=false \
+              --title "WaveFly YT TESTE #${{ github.run_number }} (${GITHUB_REF_NAME})" \
+              --notes "APK de teste da branch ${GITHUB_REF_NAME}. Ainda não está na main."
+          fi

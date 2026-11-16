@@ -1,0 +1,371 @@
+# -*- coding: utf-8 -*-
+"""Ajustes específicos da versão Android do WaveFly.
+
+São aplicados por cima do waveflysite.py na hora em que o app inicia (ver app_entry.start):
+  - corrige a miniatura dos vídeos na biblioteca;
+  - tira o botão "Forçar" de downloads cancelados;
+  - conserta o botão de play que cobria as miniaturas da busca;
+  - permite fechar "Ajustes e Qualidade" arrastando para baixo;
+  - avisa o Android sobre o player (para a notificação) e recebe os comandos dela.
+"""
+import os
+import sys
+
+# --------------------------------------------------------------------------- CSS
+CSS = """<style id="wf-android-css">
+/* o botão 3D genérico pintava o play por cima da miniatura (busca por nome, dentro da playlist, lista) */
+html body button.pp{background:rgba(0,0,0,.22)!important;border:0!important;border-radius:0!important;
+ box-shadow:none!important;color:#fff!important;text-shadow:none!important}
+html body button.pp:active{transform:none!important;box-shadow:none!important}
+html body .rs.pvon .bd2>.tt:first-child{color:var(--t-ac2,#e46f22)!important;font-weight:700}
+html body .rs.pvcarr .bd2>.tt:first-child{opacity:.6}
+/* aba Buscar: o texto aparecia duplicado por uma sombra preta só nela */
+html body .tabs a.on,html body .tabs a:nth-child(2).on,html body .tabs a[data-go].on,html body .tabs a[href*="buscar"].on,html body .tabs a.on *{text-shadow:none!important}
+/* barras e botões de baixar só aparecem quando há algo selecionado */
+#sbar[hidden],#libbar[hidden],#repbar[hidden],#bgo[hidden],.sel[hidden],.sbar[hidden]{display:none!important}
+/* tela inicial sem o resumo de formato/pasta (isso fica em Ajustes, pela engrenagem) */
+html body #v-baixar .js-chip{display:none!important}
+/* é um aplicativo, não um site: não seleciona nem copia os textos da interface */
+html,body,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,[contenteditable="true"]{-webkit-user-select:text!important;user-select:text!important}
+.lr{content-visibility:auto;contain-intrinsic-size:auto 60px}
+.lr .cv img{will-change:auto}
+img{-webkit-user-drag:none}
+/* botão X para tirar um link da lista */
+html body .pr .pvx{flex:none;margin-left:auto;width:34px;height:34px;min-width:34px;padding:0;border-radius:50%;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
+</style>
+"""
+
+# --------------------------------------------------------------------------- JS
+JS = r"""<script id="wf-android-js">
+(function(){
+  /* ---- 1. Fechar "Ajustes e Qualidade" arrastando para baixo (acompanha o dedo, fecha com inércia) ---- */
+  try{
+    var sh=document.getElementById('sheet'),pn=sh&&sh.querySelector('.spn');
+    if(pn){
+      var x0=0,y0=0,off=0,arr=false,mov=false,vel=0,ly=0,lt=0,raf=0,LIM=10;
+      pn.style.willChange='transform';pn.style.overscrollBehavior='contain';
+      var fechar=function(){try{fecharAj()}catch(e){sh.classList.remove('on')}};
+      var pinta=function(){raf=0;pn.style.transform='translate3d(0,'+off+'px,0)'};
+      var limpa=function(){pn.style.transition='';pn.style.transform=''};
+      pn.addEventListener('touchstart',function(e){
+        arr=false;mov=false;off=0;vel=0;
+        if(e.touches.length!==1)return;
+        if(e.target.closest&&e.target.closest('input,select,textarea'))return;
+        if(pn.scrollTop>0)return;
+        arr=true;x0=e.touches[0].clientX;y0=ly=e.touches[0].clientY;lt=performance.now();
+      },{passive:true});
+      pn.addEventListener('touchmove',function(e){
+        if(!arr)return;
+        var t=e.touches[0],dx=t.clientX-x0,dy=t.clientY-y0,agora=performance.now();
+        if(!mov){
+          if(Math.abs(dx)>Math.abs(dy)||dy<-4){arr=false;return}
+          if(dy<LIM)return;
+          if(pn.scrollTop>0){arr=false;return}
+          mov=true;pn.style.transition='none';
+        }
+        var dt=Math.max(1,agora-lt);vel=0.75*vel+0.25*((t.clientY-ly)/dt);ly=t.clientY;lt=agora;
+        off=Math.max(0,dy-LIM);
+        if(!raf)raf=requestAnimationFrame(pinta);
+        if(e.cancelable)e.preventDefault();
+      },{passive:false});
+      var soltar=function(){
+        if(!mov){arr=false;return}
+        arr=false;mov=false;
+        if(raf){cancelAnimationFrame(raf);raf=0}
+        var h=pn.getBoundingClientRect().height||600;
+        if(off>h*0.28||vel>0.55){
+          var resta=Math.max(1,h-off),ms=Math.max(160,Math.min(320,resta/Math.max(0.6,vel)));
+          pn.style.transition='transform '+ms+'ms cubic-bezier(.25,.8,.3,1)';
+          pn.style.transform='translate3d(0,100%,0)';
+          setTimeout(function(){fechar();setTimeout(limpa,60)},ms);
+        }else{
+          pn.style.transition='transform .32s cubic-bezier(.2,.9,.25,1)';
+          pn.style.transform='translate3d(0,0,0)';
+          setTimeout(limpa,340);
+        }
+        off=0;
+      };
+      pn.addEventListener('touchend',soltar);
+      pn.addEventListener('touchcancel',soltar);
+    }
+  }catch(e){}
+
+  /* ---- 1b. Prévia só com áudio na busca: toca no próprio lugar e destaca o título da faixa ---- */
+  var PVID=null,PVAU=null;
+  function pvStop(){
+    if(PVAU){try{PVAU.pause()}catch(x){}PVAU.removeAttribute('src');try{PVAU.load()}catch(x){}PVAU=null}
+    $$('.pp').forEach(function(x){x.innerHTML=ic('play',18);x.classList.remove('on')});
+    $$('.pvon').forEach(function(r){r.classList.remove('pvon','pvcarr')});
+    PVID=null;
+  }
+  window.addEventListener('click',function(e){
+    try{
+      var b=e.target.closest&&e.target.closest('[data-pv]');
+      if(!b||!window.WF||!WF.stream)return;
+      e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+      var id=b.dataset.pv;
+      if(PVID===id){pvStop();return}
+      pvStop();
+      var au=aud();if(au&&!au.paused){try{togglePlay()}catch(x){}}   /* pausa o player da biblioteca */
+      PVID=id;
+      var row=b.closest('.rs,.tr');
+      if(row)row.classList.add('pvon','pvcarr');
+      b.innerHTML=ic('stop',18);b.classList.add('on');
+      WF.stream(id);
+    }catch(x){}
+  },true);
+  window.wfStream=function(id,url,err){
+    if(PVID!==id)return;
+    if(!url){toast(err||'Não foi possível tocar esta prévia.');pvStop();return}
+    var row=document.querySelector('[data-pv="'+id+'"]');row=row&&row.closest('.rs,.tr');
+    if(row)row.classList.remove('pvcarr');
+    PVAU=new Audio(url);
+    PVAU.onended=pvStop;
+    PVAU.onerror=function(){toast('Não consegui tocar esta prévia.');pvStop()};
+    var p=PVAU.play();if(p&&p.catch)p.catch(function(){toast('Não consegui tocar esta prévia.');pvStop()});
+  };
+
+  /* ---- 1c. Vídeo continua tocando (só o áudio) quando o app vai para segundo plano ---- */
+  function trocarMidia(tag){
+    try{
+      var a=aud();if(!a||a.tagName.toLowerCase()===tag)return;
+      var t=a.currentTime||0,tocando=!a.paused,src=a.currentSrc||a.src;
+      var n=document.createElement(tag);n.id='au';
+      if(tag==='video')n.setAttribute('playsinline','');
+      n.volume=a.volume;
+      ['onended','onerror','onplay','onpause','ontimeupdate','onloadedmetadata','ondurationchange'].forEach(function(k){n[k]=a[k]});
+      a.onpause=null;a.onended=null;a.onerror=null;a.onplay=null;
+      try{a.pause()}catch(x){}
+      a.parentNode.replaceChild(n,a);
+      n.addEventListener('loadedmetadata',function(){try{n.currentTime=t}catch(x){}if(tocando){var p=n.play();if(p&&p.catch)p.catch(function(){})}},{once:true});
+      n.src=src;n.load();
+    }catch(x){}
+  }
+  function ehVideo(){return typeof CUR!=='undefined'&&/\.(mp4|mkv)$/i.test(CUR||'')}
+  var querTocar=false;
+  document.addEventListener('play',function(e){if(e.target&&e.target.id==='au')querTocar=true},true);
+  document.addEventListener('pause',function(e){
+    if(!e.target||e.target.id!=='au')return;
+    if(document.hidden&&ehVideo()&&querTocar&&!e.target.ended){trocarMidia('audio')}  /* o sistema pausou o vídeo ao sair: continua só com o áudio */
+    else if(!document.hidden)querTocar=false;
+  },true);
+  document.addEventListener('visibilitychange',function(){
+    if(!ehVideo())return;
+    var a=aud();if(!a)return;
+    if(document.hidden){if(!a.paused)trocarMidia('audio')}
+    else if(a.tagName.toLowerCase()==='audio'){trocarMidia('video')}
+  });
+
+  /* ---- 2. Avisar o app Android sobre o player (a notificação usa isso) ---- */
+  function aud(){return document.getElementById('au')}
+  function txt(id){var el=document.getElementById(id);return el?(el.textContent||''):''}
+  window.wfRep=function(){
+    try{
+      if(!window.WF||!WF.player)return;
+      var a=aud(),cur=(typeof CUR!=='undefined'&&CUR)?CUR:'';
+      var vid=/\.(mp4|mkv)$/i.test(cur);
+      var toc=!!(a&&cur&&!a.paused&&!a.ended);
+      var pos=a&&isFinite(a.currentTime)?Math.round(a.currentTime*1000):0;
+      var dur=a&&isFinite(a.duration)?Math.round(a.duration*1000):0;
+      WF.player(cur?1:0,toc?1:0,vid?1:0,txt('plt'),txt('pls'),pos,dur,cur);
+    }catch(e){}
+  };
+    ['play','playing','pause','ended','seeked','loadedmetadata','durationchange','emptied','timeupdate'].forEach(function(n){
+    document.addEventListener(n,function(){window.wfRep()},true);
+  });
+  try{var sp=stopPlayer;stopPlayer=function(){sp.apply(this,arguments);window.wfRep()}}catch(e){}
+  var bx=document.getElementById('plx');
+  if(bx)bx.addEventListener('click',function(){setTimeout(window.wfRep,50)});
+
+
+  /* ---- ⏮ volta ao início se a música passou de 3 s; senão vai para a anterior ---- */
+  try{var px=proxima;proxima=function(d){var a=aud();if(d<0&&a&&(a.currentTime||0)>3){a.currentTime=0;try{posLimpa(CUR)}catch(e){}setTimeout(window.wfRep,200);return}return px.apply(this,arguments)}}catch(e){}
+
+  /* ---- passo dos botões ±N s (10, 15 ou 30) também dentro do app ---- */
+  function passoApp(){var n=0;try{n=parseInt((window.WF&&WF.pref)?WF.pref('passo'):'10',10)}catch(e){}return(n===15||n===30)?n:10}
+  var brw=document.getElementById('brew'),bfw=document.getElementById('bff');
+  if(brw)brw.addEventListener('click',function(ev){ev.stopImmediatePropagation();var a=aud();if(a)a.currentTime=Math.max(0,a.currentTime-passoApp())},true);
+  if(bfw)bfw.addEventListener('click',function(ev){ev.stopImmediatePropagation();var a=aud();if(a&&isFinite(a.duration))a.currentTime=Math.min(a.duration-0.2,a.currentTime+passoApp())},true);
+  function rotuloPasso(){var n=passoApp();if(brw)brw.setAttribute('aria-label','Voltar '+n+' segundos');if(bfw)bfw.setAttribute('aria-label','Avançar '+n+' segundos')}
+  rotuloPasso();setInterval(rotuloPasso,5000);
+
+  /* ---- lembrar a posição em faixas longas (10 min ou mais) ---- */
+  var POSK='wf_pos';
+  function posLer(){try{return JSON.parse(localStorage.getItem(POSK)||'{}')}catch(e){return{}}}
+  function posGravar(o){try{var k=Object.keys(o);if(k.length>150){k.sort(function(x,y){return(o[x].ts||0)-(o[y].ts||0)}).slice(0,k.length-150).forEach(function(z){delete o[z]})}localStorage.setItem(POSK,JSON.stringify(o))}catch(e){}}
+  window.posLimpa=function(rel){if(!rel)return;var o=posLer();if(o[rel]){delete o[rel];posGravar(o)}};
+  var posUlt=0;
+  document.addEventListener('timeupdate',function(){
+    try{var a=aud();if(!a||typeof CUR==='undefined'||!CUR||!isFinite(a.duration)||a.duration<600)return;
+      var n=Date.now();if(n-posUlt<5000)return;posUlt=n;
+      var t=a.currentTime||0;if(t<30||t>a.duration-30)return;
+      var o=posLer();o[CUR]={t:Math.floor(t),d:Math.floor(a.duration),ts:n};posGravar(o)}catch(e){}},true);
+  document.addEventListener('ended',function(){try{posLimpa(CUR)}catch(e){}},true);
+  document.addEventListener('loadedmetadata',function(){
+    try{var a=aud();if(!a||typeof CUR==='undefined'||!CUR||!isFinite(a.duration)||a.duration<600)return;
+      var o=posLer(),s=o[CUR];if(!s||s.t<30||s.t>a.duration-30)return;
+      a.currentTime=s.t;var m=Math.floor(s.t/60),sg=s.t%60;
+      toast('Continuando de '+m+':'+(sg<10?'0':'')+sg+' · ⏮ para recomeçar')}catch(e){}},true);
+
+  /* comandos vindos da notificação */
+  window.wfCmd=function(c){
+    try{
+      var a=aud();
+      if(c==='play'){if(a&&a.paused)togglePlay()}
+      else if(c==='pause'){if(a&&!a.paused)togglePlay()}
+      else if(c==='next')proxima(1);
+      else if(c==='prev')proxima(-1);
+      else if(c==='stop')stopPlayer();
+      else if(c.indexOf('rel:')===0){var d=parseInt(c.slice(4),10);if(a&&isFinite(d)){var t=(a.currentTime||0)+d;if(t<0)t=0;if(isFinite(a.duration)&&t>a.duration)t=a.duration;a.currentTime=t;setTimeout(window.wfRep,200)}}
+      else if(c.indexOf('seek:')===0){var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200)}}
+    }catch(e){}
+  };
+
+  /* ---- a prévia da busca para quando a pesquisa é apagada ---- */
+  ['qx','scl'].forEach(function(id){var e=document.getElementById(id);if(e)e.addEventListener('click',function(){pvStop()},true)});
+  var qq=document.getElementById('q');if(qq)qq.addEventListener('input',function(){if(!qq.value.trim())pvStop()});
+
+  /* ---- 3. Não cola sozinho o que foi copiado (só o botão Colar cola) ---- */
+  window.wfClip=function(){};
+
+    setTimeout(window.wfRep,1500);
+  setInterval(window.wfRep,1000);
+})();
+</script>
+"""
+
+# Troca de texto no HTML: (antigo, novo). Cada "antigo" tem que existir exatamente uma vez.
+TROCAS = [
+    # download cancelado pelo usuário não é falha: sem o botão "Forçar"
+    ("if(i.status==='duplicada'||i.status==='cancelada'||i.status==='falha')a+=",
+     "if(i.status==='duplicada'||i.status==='falha')a+="),
+]
+
+
+def _log(msg):
+    try:
+        sys.stderr.write("[wavefly_android] %s\n" % msg)
+    except Exception:
+        pass
+
+
+def ajustar_html(html):
+    """Devolve o HTML da página com os ajustes. Quem não encontrar o trecho só avisa no log."""
+    for antigo, novo in TROCAS:
+        if html.count(antigo) != 1:
+            _log("trecho não encontrado (ou repetido) no HTML: %r" % antigo[:60])
+            continue
+        html = html.replace(antigo, novo, 1)
+    try:
+        import wavefly_ui
+        extra = CSS + JS + wavefly_ui.bloco()
+    except Exception as e:
+        _log('falha ao montar a interface extra: %s' % e)
+        extra = CSS + JS
+    pos = html.rfind("</body>")
+    html = html + extra if pos < 0 else html[:pos] + extra + html[pos:]
+    return forcar_escuro(html)
+
+
+def forcar_escuro(html):
+    """O app é sempre escuro, não importa o tema do celular."""
+    import re as _re
+    html = _re.sub(r"@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)", "@media all", html)
+    html = _re.sub(r"@media\s*\(\s*prefers-color-scheme\s*:\s*light\s*\)", "@media not all", html)
+    html = html.replace('<meta name="color-scheme" content="dark light">', '<meta name="color-scheme" content="dark">')
+    html = html.replace('<meta name="theme-color" content="#f3e6cc" media="(prefers-color-scheme: light)">', '')
+    html = html.replace('<meta name="theme-color" content="#1f1510" media="(prefers-color-scheme: dark)">', '<meta name="theme-color" content="#1f1510">')
+    return html
+
+
+def corrigir_capas(w):
+    """_vid_do_arquivo quebrava: o índice guarda LISTAS de caminhos e o código tratava como texto.
+    O erro derrubava a capa de todo arquivo sem imagem embutida (vídeos, principalmente)."""
+
+    def _vid_do_arquivo(pth):
+        try:
+            if not w.REV:
+                with w.LOCK:
+                    for vid, tipos in list(w.INDEX.items()):
+                        for caminhos in (tipos or {}).values():
+                            if isinstance(caminhos, str):
+                                caminhos = [caminhos]
+                            for c in caminhos or []:
+                                if isinstance(c, str):
+                                    w.REV[os.path.realpath(c)] = vid
+            return w.REV.get(os.path.realpath(pth))
+        except Exception as e:
+            _log("falha ao consultar o índice de capas: %s" % e)
+            return None
+
+    w._vid_do_arquivo = _vid_do_arquivo
+
+
+def rotas(w):
+    """Rotas extras do app: sugestões, versões e atualização do yt-dlp."""
+    orig = w.H.do_GET
+
+    def do_GET(self):
+        try:
+            from urllib.parse import urlparse, parse_qs
+            u = urlparse(self.path)
+            if u.path in ("/api/ytdlp", "/api/pausa", "/api/dev") and self._host_ok():
+                q = parse_qs(u.query)
+                if u.path == "/api/pausa":
+                    if (q.get("v") or [""])[0] in ("0", "1"):
+                        w.definir_pausa((q.get("v") or ["0"])[0] == "1")
+                    if (q.get("falhas") or [""])[0] == "1":
+                        w.acao({"acao": "tentar_falhas"})
+                    with w.LOCK:
+                        ativos = sum(1 for i in w.ITENS if i["status"] in ("fila", "baixando"))
+                        falhas = sum(1 for i in w.ITENS if i["status"] == "falha")
+                    return self._json({"pausado": bool(w.PAUSA["on"]), "ativos": ativos, "falhas": falhas})
+                if u.path == "/api/dev":
+                    if (q.get("rapido") or [""])[0] in ("0", "1"):
+                        w.definir_rapido((q.get("rapido") or ["0"])[0] == "1")
+                    if any((q.get(k) or [""])[0] for k in ("rede", "conv")):
+                        g = lambda k: (q.get(k) or [""])[0]
+                        w.definir_ajustes(int(g("rede")) if g("rede") else None, int(g("conv")) if g("conv") else None)
+                    if any((q.get(k) or [""])[0] != "" for k in ("wifi", "carga", "batmin")):
+                        g2 = lambda k: (q.get(k) or [""])[0]
+                        w.definir_condicoes(g2("wifi") == "1" if g2("wifi") != "" else None, g2("carga") == "1" if g2("carga") != "" else None,
+                                            int(g2("batmin")) if g2("batmin").isdigit() else None)
+                    if (q.get("longas") or [""])[0].isdigit():
+                        w.definir_longas(int(q["longas"][0]))
+                    if (q.get("limpar") or [""])[0]:
+                        with w.DEV_LOCK:
+                            w.DEV["log"].clear()
+                            w.DEV["medidas"].clear()
+                    return self._json(w.dev_estado())
+                import app_entry
+                res = ""
+                if (q.get("forcar") or [""])[0]:
+                    res = app_entry.atualizar_ytdlp(w.BASE, True)
+                return self._json({"versao": app_entry.versao_ytdlp(), "resultado": res})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as ex:
+            try:
+                return self._json({"erro": str(ex)[:200], "itens": [], "mais": False}, 200)
+            except Exception:
+                return
+        return orig(self)
+
+    w.H.do_GET = do_GET
+
+
+def aplicar(w):
+    """Aplica tudo sobre o módulo waveflysite já importado. Nunca levanta exceção."""
+    try:
+        rotas(w)
+    except Exception as e:
+        _log("falha ao criar as rotas extras: %s" % e)
+    try:
+        w.HTML = ajustar_html(w.HTML)
+    except Exception as e:
+        _log("falha ao ajustar o HTML: %s" % e)
+    try:
+        corrigir_capas(w)
+    except Exception as e:
+        _log("falha ao corrigir as capas: %s" % e)
