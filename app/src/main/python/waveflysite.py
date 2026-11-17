@@ -1394,7 +1394,7 @@ def definir_longas(minutos):
 def longa_demais(it, dur):
     """MP3 acima do limite escolhido no painel (com 3 min de margem)? Devolve a mensagem de aviso ou ''."""
     lim = DEV.get("longas_min", 0)
-    if not lim or it.get("fmt") != "mp3" or not dur:
+    if not lim or it.get("fmt") != "mp3" or not dur or it.get("forcar"):
         return ""
     if dur > (lim + 3) * 60:
         return "Longa demais (%d min). Limite: %d min. Mude em Desenvolvedor › Músicas longas." % (round(dur / 60), lim)
@@ -1533,7 +1533,7 @@ def _processar(it):
     titulo_preview = it.get("titulo") or ""
     aviso_longa = longa_demais(it, it.get("dur") or DURS.get(chave(it["url"]), 0))
     if aviso_longa:
-        marcar(it, "falha", aviso_longa)
+        marcar(it, "pulada", aviso_longa)
         return
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     erro_info = None
@@ -1566,7 +1566,7 @@ def _processar(it):
         DURS[chave(it["url"])] = info["duration"]
     aviso_longa = longa_demais(it, info.get("duration") or 0)
     if aviso_longa:
-        marcar(it, "falha", aviso_longa)
+        marcar(it, "pulada", aviso_longa)
         return
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
@@ -1824,7 +1824,7 @@ def acao(d):
                 matar_ffmpeg()
             else:
                 ITENS.remove(it)
-        elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha"):
+        elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha", "pulada"):
             it.update(status="fila", forcar=True, auto=True, cancel=False, _cook=False)
         elif a == "tentar_falhas":
             for i in ITENS:
@@ -1845,7 +1845,7 @@ def estado():
                "total": len(ITENS), "dec": ((fim or time.time()) - ini) if ini else 0, "aviso": SESS["aviso"],
                "agora": (at["titulo"] or at["url"]) if at else "",
                "pasta": CFG["atual"], "qualidade": CFG["qualidade"]}
-        for k in ("fila", "baixando", "ok", "falha", "duplicada", "cancelada"):
+        for k in ("fila", "baixando", "ok", "falha", "duplicada", "cancelada", "pulada"):
             out[k] = c.get(k, 0)
         alvo = [i for i in ITENS if i["status"] in ("fila", "baixando", "ok")]
         out["est"] = sum(est_bytes(i["dur"], i["fmt"], i["qual"], i["res"]) for i in alvo)
@@ -3182,27 +3182,29 @@ function rowHTML(i){let sub='',cls='';
  if(i.status==='baixando')sub=(i.vel&&/Lendo|Convertendo|Juntando|Baixando/.test(i.vel)?i.vel:(i.pct||0)+'%'+(i.vel?' · '+i.vel:''));
  else if(i.status==='falha'){sub='Falhou: '+(i.erro||'erro');cls=' er'}
  else if(i.status==='duplicada')sub='Já existe na pasta (será ignorado)';
+ else if(i.status==='pulada')sub=i.erro||'Pulada';
  else if(i.status==='ok')sub='Concluído';
  else if(i.status==='cancelada')sub='Cancelada';
  else sub=(i.sub&&!/lendo nome/i.test(i.sub))?'Na fila · '+i.sub:'Na fila';
  let a='';
  if(i.status==='duplicada'||i.status==='cancelada'||i.status==='falha')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
+ if(i.status==='pulada')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='falha')a+=`<button class="t" data-a="retentar" data-id="${i.id}">Tentar de novo</button>`;
  if(i.status==='ok'&&i.arq&&C.servidor)a+=`<a class="t" style="color:var(--at);font-size:13.5px;padding:4px 6px" href="/api/baixar?f=${encodeURIComponent(i.arq)}" download>Receber</a>`;
  a+=`<button class="t" data-a="remover" data-id="${i.id}">${i.status==='baixando'?'Cancelar':'Remover'}</button>`;
  const v=vidOf(i.url),th=v?`<img class="ft" loading="lazy" src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`:'<span class="ft"></span>';
  return `<div class="it" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
-const ORD={baixando:0,fila:1,falha:2,duplicada:3,cancelada:4,ok:5};
-function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada,at=s.fila+s.baixando>0;
+const ORD={baixando:0,fila:1,falha:2,pulada:3,duplicada:3,cancelada:4,ok:5};
+function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada+(s.pulada||0),at=s.fila+s.baixando>0;
  if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt();libAtual(1)}}
  document.title=(at?`${c}/${s.total} · `:'')+APPN;$('#fila').hidden=!s.total;if(!s.total){LAST='';READY=[];return}
  READY=s.itens.filter(i=>i.status==='ok'&&i.arq).map(i=>i.arq);$('#entrega').hidden=!(C.servidor&&READY.length);$('#en').textContent=READY.length;
  $('#eq').classList.toggle('on',at);document.body.classList.toggle('baixando',at);$('#fh').textContent=at?'Baixando Fila':'Concluído';$('#fc').textContent=`${c} de ${s.total}`;$('#fbar').style.width=Math.round(c/s.total*100)+'%';
- const p=[];if(s.ok)p.push(s.ok+' concluídas');if(s.duplicada)p.push(s.duplicada+' duplicadas');if(s.falha)p.push(s.falha+' falhas');
+ const p=[];if(s.ok)p.push(s.ok+' concluídas');if(s.duplicada)p.push(s.duplicada+' duplicadas');if(s.pulada)p.push(s.pulada+' puladas');if(s.falha)p.push(s.falha+' falhas');
  p.push(fmt(s.dec));if(at&&c>0)p.push('faltam ~'+fmt(s.dec/c*(s.fila+s.baixando)));
  if(s.est)p.push('~'+tamf(s.est)+' est.');$('#fs').textContent=p.join(' · ');
  $('#fav').hidden=!s.aviso;$('#fav').textContent=s.aviso||'';
- $('#bcanc').hidden=!at;$('#blimpa').hidden=!(s.ok+s.duplicada);
+ $('#bcanc').hidden=!at;$('#blimpa').hidden=!(s.ok+s.duplicada+(s.pulada||0));
  const k=JSON.stringify(s.itens)+'|'+QVN+'|'+ABAF;if(k===LAST)return;LAST=k;
  const it=s.itens.slice().sort((a,b)=>ORD[a.status]-ORD[b.status]||a.id-b.id);
  const nOk=it.filter(x=>x.status==='ok').length, nFila=it.length-nOk;
@@ -3379,13 +3381,16 @@ function tocar(rel,box){
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
- $('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';ST_STOP=false;
- (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;
- const a=MA();a.volume=VOL;
- a.onended=()=>proxima(1);a.onerror=()=>toast('Não consegui reproduzir este arquivo');
+ ST_STOP=false;
+ let a=MA();const reuse=!vid&&!!a&&a.tagName==='AUDIO'&&$('#pl-audio').contains(a);
+ if(reuse){a.src=url;const r=a.play();if(r&&r.catch)r.catch(()=>{})}
+ else{$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
+  (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;a=MA()}
+ a.volume=VOL;
+ a.onended=()=>proxima(1);a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
  a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>plState(ST_STOP?'stop':'pause');
  a.ontimeupdate=plTime;a.onloadedmetadata=plTime;a.ondurationchange=plTime;
- plState('pause');plTime();
+ if(!reuse)plState('pause');plTime();
  if('mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:x.nome,artist:APPN,artwork:[{src:capa}]});
   navigator.mediaSession.setActionHandler('nexttrack',()=>proxima(1));navigator.mediaSession.setActionHandler('previoustrack',()=>proxima(-1))}catch(e){}}
  marcarNow()}
@@ -3406,7 +3411,7 @@ const VOLI=$('#vol');VOLI.value=Math.round(VOL*100);
 VOLI.oninput=()=>{VOL=VOLI.value/100;const a=MA();if(a)a.volume=VOL;try{localStorage.setItem('wf_vol',String(VOL))}catch(e){}};
 try{new ResizeObserver(()=>document.documentElement.style.setProperty('--plh',($('#pl').offsetHeight||0)+'px')).observe($('#pl'))}catch(e){}
 function stopPlayer(){
- const a=MA();if(a){ST_STOP=true;a.pause();a.removeAttribute('src');a.load()}
+ const a=MA();if(a){ST_STOP=true;a.onerror=null;a.onended=null;a.pause();a.removeAttribute('src');a.load()}
  $('#pl').hidden=true;$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
  $('#pl').classList.remove('rodando');document.body.classList.remove('pon');plSemTema();CUR='';marcarNow()
 }

@@ -72,7 +72,7 @@ def resumo():
             itens = list(w.ITENS)
         baixando = [i for i in itens if i.get("status") == "baixando"]
         fila = [i for i in itens if i.get("status") == "fila"]
-        feitos = [i for i in itens if i.get("status") in ("ok", "duplicada", "falha", "cancelada")]
+        feitos = [i for i in itens if i.get("status") in ("ok", "duplicada", "falha", "cancelada", "pulada")]
         atual = next((i for i in baixando if "convert" not in (i.get("vel") or "")), baixando[0] if baixando else None)
         total = len(baixando) + len(fila) + len(feitos)
         return "%d|%d|%d|%d|%s|%s|%d" % (

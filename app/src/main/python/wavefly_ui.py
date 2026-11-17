@@ -90,7 +90,7 @@ DICT = [
     ("Concluídas", "Completed", "Completadas"), ("Avulsos", "Separate files", "Archivos sueltos"), ("Em ZIP", "As ZIP", "En ZIP"),
     ("arquivo(s) pronto(s) para receber", "file(s) ready to receive", "archivo(s) listo(s) para recibir"),
     ("Pesquise faixas, confira visualizações e o tamanho estimado.", "Search tracks, check views and the estimated size.", "Busca canciones, mira las visualizaciones y el tamaño estimado."),
-    ("Músicas", "Music", "Música"), ("Playlists", "Playlists", "Listas"), ("Vídeos", "Videos", "Vídeos"), ("Repetidas", "Duplicates", "Repetidas"),
+    ("Músicas", "Music", "Música"), ("Playlists", "Playlists", "Listas"), ("Vídeos", "Videos", "Vídeos"), ("Repetidas", "Duplicates", "Repetidas"), ("Puladas", "Skipped", "Omitidas"),
     ("Nome da música ou artista", "Song or artist name", "Nombre de la canción o artista"),
     ("Ver lista", "View list", "Ver lista"), ("Filtrar músicas...", "Filter music...", "Filtrar música..."),
     ("Filtrar vídeos...", "Filter videos...", "Filtrar vídeos..."), ("Mostrar vídeos", "Show videos", "Mostrar vídeos"),
@@ -208,6 +208,7 @@ PADROES = [
     (r"^(\d+) duplicados marcados$", "$1 duplicates marked", "$1 duplicados marcados"),
     (r"^(\d+) repetidos? ignorados?$", "$1 duplicate(s) skipped", "$1 repetido(s) omitido(s)"),
     (r"^(\d+) ignorados?$", "$1 skipped", "$1 omitido(s)"),
+    (r"^(\d+) puladas?$", "$1 skipped", "$1 omitidas"),
     (r"^(\d+) playlists?$", "$1 playlist(s)", "$1 lista(s)"),
     (r"^(\d+) apagados$", "$1 deleted", "$1 borrados"),
     (r"^(\d+) selecionad[oa]s?$", "$1 selected", "$1 seleccionado(s)"),
@@ -616,7 +617,7 @@ function devAtualiza(){
     var m=j.medias||{};
     d.querySelector('#wftb').innerHTML=j.n?lin(T('Informações'),m.info+' s')+lin('Download',m.dl+' s')+lin(T('Conversão'),m.conv+' s')+lin(T('Espera'),m.espera+' s')+lin('Total',m.total+' s')+lin(T('Mediana (total)'),(j.medianas||{}).total+' s')+lin(T('Mediana (conversão)'),(j.medianas||{}).conv+' s')+lin(T('Músicas por hora'),j.por_hora)+lin(T('Amostra'),j.n)+cmp(j):'<tr><td>'+T('Sem medidas ainda. Baixe algumas músicas.')+'</td></tr>';
     var c=j.cont||{};
-    d.querySelector('#wfct').innerHTML=lin(T('Concluídas'),j.ok)+lin(T('Falhas'),j.falha)+lin(T('Na fila'),c.fila||0)+lin('Baixando',c.baixando||0)+lin(T('Repetidas'),c.duplicada||0);
+    d.querySelector('#wfct').innerHTML=lin(T('Concluídas'),j.ok)+lin(T('Falhas'),j.falha)+lin(T('Na fila'),c.fila||0)+lin('Baixando',c.baixando||0)+lin(T('Repetidas'),c.duplicada||0)+lin(T('Puladas'),c.pulada||0);
     var lg=(j.log||[]).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}).join('\n');
     var el=d.querySelector('#wflg');el.textContent=lg||T('Sem eventos.');el.dataset.txt=lg;
     var ap='';try{if(W&&W.info){var i=JSON.parse(W.info());ap=lin(T('Bateria'),i.bat+'%'+(i.carregando?' ⚡':''))+lin(T('Memória do app'),i.memMb+' MB')+lin(T('Rede'),i.rede)}}catch(e){}

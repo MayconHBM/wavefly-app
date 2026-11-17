@@ -445,7 +445,8 @@ public class PythonService extends Service {
         rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
         long pos = posAgora();
         Bitmap cb = capaBmp;
-        boolean temCapa = cb != null && capaDe.equals(pCapa);
+        // enquanto a capa da faixa nova carrega, mantém a anterior (sem piscar o ícone genérico)
+        boolean temCapa = cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa));
         if (est.equals("fundo")) {
             if (temCapa) {
                 prepararFundo(cb);
@@ -535,7 +536,7 @@ public class PythonService extends Service {
                     .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
             Bitmap cb = capaBmp;
-            if (cb != null && capaDe.equals(pCapa)) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
+            if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
                         long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
             long posAtual = pPosMs;

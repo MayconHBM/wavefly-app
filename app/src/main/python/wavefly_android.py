@@ -165,7 +165,7 @@ JS = r"""<script id="wf-android-js">
       if(!window.WF||!WF.player)return;
       var a=aud(),cur=(typeof CUR!=='undefined'&&CUR)?CUR:'';
       var vid=/\.(mp4|mkv)$/i.test(cur);
-      var toc=!!(a&&cur&&!a.paused&&!a.ended);
+      var toc=!!(a&&cur&&!a.ended&&(!a.paused||(Date.now()-(window.wfTroca||0)<5000&&!a.error&&!window.wfPausaManual)));
       var pos=a&&isFinite(a.currentTime)?Math.round(a.currentTime*1000):0;
       var dur=a&&isFinite(a.duration)?Math.round(a.duration*1000):0;
       WF.player(cur?1:0,toc?1:0,vid?1:0,txt('plt'),txt('pls'),pos,dur,cur);
@@ -174,7 +174,10 @@ JS = r"""<script id="wf-android-js">
     ['play','playing','pause','ended','seeked','loadedmetadata','durationchange','emptied','timeupdate'].forEach(function(n){
     document.addEventListener(n,function(){window.wfRep()},true);
   });
-  try{var sp=stopPlayer;stopPlayer=function(){sp.apply(this,arguments);window.wfRep()}}catch(e){}
+  try{var sp=stopPlayer;stopPlayer=function(){window.wfTroca=0;sp.apply(this,arguments);window.wfRep()}}catch(e){}
+  /* ao trocar de faixa, a notificação não pisca para "pausado" enquanto a nova carrega */
+  try{var tcr=tocar;tocar=function(){window.wfTroca=Date.now();window.wfPausaManual=false;return tcr.apply(this,arguments)}}catch(e){}
+  document.addEventListener('pause',function(e){if(!e.target||e.target.id!=='au')return;if(Date.now()-(window.wfTroca||0)>1500)window.wfPausaManual=true},true);
   var bx=document.getElementById('plx');
   if(bx)bx.addEventListener('click',function(){setTimeout(window.wfRep,50)});
 
