@@ -537,6 +537,11 @@ public class PythonService extends Service {
                 sessao.setCallback(new MediaSession.Callback() {
                     @Override
                     public void onSeekTo(long pos) {
+                        Log.i(TAG, "seekTo " + pos);
+                        // mostra já a posição nova (senão a barra volta ao ponto antigo até a página informar de novo)
+                        pPosMs = Math.max(0, pos);
+                        pEm = SystemClock.elapsedRealtime();
+                        atualizarSessao();
                         MainActivity.comandoPlayer("seek:" + pos);
                     }
 
