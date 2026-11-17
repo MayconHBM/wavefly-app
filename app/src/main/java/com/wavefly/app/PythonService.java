@@ -391,8 +391,8 @@ public class PythonService extends Service {
 
     /** "esq", "dir" ou "fundo": onde fica a capa na notificação (escolhido no painel do desenvolvedor). */
     private String estiloCapa() {
-        String v = Idioma.prefs(this).getString("p_capa", "esq");
-        return "dir".equals(v) || "fundo".equals(v) ? v : "esq";
+        String v = Idioma.prefs(this).getString("p_capa", "fundo");
+        return "dir".equals(v) || "esq".equals(v) ? v : "fundo";
     }
 
     /** Tamanho do pulo dos botões (10, 15 ou 30 segundos). */
@@ -409,20 +409,22 @@ public class PythonService extends Service {
     private void prepararFundo(Bitmap src) {
         if (src == null || fundoDe.equals(capaDe)) return;
         try {
-            int w = 720, h = 264, cw = 330;          // área total e largura da capa à direita
+            int w = 720, h = 264, cw = 440;          // área total e largura da capa à direita
             float sa = (float) src.getWidth() / src.getHeight(), da = (float) cw / h;
             int sx, sy, sw, sh;
             if (sa > da) { sh = src.getHeight(); sw = (int) (sh * da); sx = (src.getWidth() - sw) / 2; sy = 0; }
             else { sw = src.getWidth(); sh = (int) (sw / da); sx = 0; sy = (src.getHeight() - sh) / 2; }
             Bitmap corte = Bitmap.createBitmap(src, sx, sy, Math.max(1, sw), Math.max(1, sh));
             int px = Bitmap.createScaledBitmap(src, 1, 1, true).getPixel(0, 0);
-            int cor = 0xFF000000 | (((px >> 16 & 0xFF) * 32 / 100) << 16) | (((px >> 8 & 0xFF) * 32 / 100) << 8) | ((px & 0xFF) * 32 / 100);
+            int cor = 0xFF000000 | (((px >> 16 & 0xFF) * 42 / 100) << 16) | (((px >> 8 & 0xFF) * 42 / 100) << 8) | ((px & 0xFF) * 42 / 100);
             Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             android.graphics.Canvas c = new android.graphics.Canvas(out);
             c.drawColor(cor);
             android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG | android.graphics.Paint.ANTI_ALIAS_FLAG);
             c.drawBitmap(corte, null, new android.graphics.Rect(w - cw, 0, w, h), p);
-            p.setShader(new android.graphics.LinearGradient(w - cw, 0, w - cw * 0.35f, 0, cor, cor & 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP));
+            p.setShader(new android.graphics.LinearGradient(w - cw, 0, w - cw * 0.12f, 0,
+                    new int[]{cor, (cor & 0x00FFFFFF) | 0xE0000000, (cor & 0x00FFFFFF) | 0x80000000, cor & 0x00FFFFFF},
+                    new float[]{0f, 0.35f, 0.7f, 1f}, android.graphics.Shader.TileMode.CLAMP));
             c.drawRect(w - cw, 0, w, h, p);
             fundoCor = cor;
             fundoBmp = out;
