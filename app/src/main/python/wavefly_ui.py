@@ -520,7 +520,6 @@ function devAbrir(){
     '<div class="wfrow" style="margin-top:8px"><span class="wft">Conversões ao mesmo tempo</span></div><span class="wfseg" id="wfsc"></span>'+
     '<p class="note">Mais simultâneas = mais rápido, mas esquenta mais o celular e aumenta o risco de bloqueio do YouTube. Se bloquear, o freio automático volta ao ritmo normal. Downloads: o limite é o YouTube (bloqueio). Conversões: o limite é o processador do celular.</p></div></div>'+
     '<div class="wfcx"><h3>Player e notificação</h3><div class="wfrow"><span class="wft">Pulo dos botões (segundos)</span></div><span class="wfseg" id="wfps"></span>'+
-    '<div class="wfrow" style="margin-top:10px"><span class="wft">Capa na notificação</span></div><span class="wfseg" id="wfcp2"></span>'+
     '<p class="note">⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.</p></div>'+
     '<div class="wfcx"><h3>Condições para baixar</h3>'+
     '<div class="wfrow"><span class="wft">Só no Wi-Fi</span><label class="wfsw"><input type="checkbox" id="wfcw"><i></i></label></div>'+
@@ -562,11 +561,10 @@ function devAbrir(){
       [['#wfsr'],['#wfsc']].forEach(function(x){[].forEach.call(d.querySelector(x[0]).children,function(c){c.classList.toggle('on',+c.dataset.n===p[1])})});
       marca();fetch('/api/dev?rede='+p[1]+'&conv='+p[1]).then(devAtualiza)};
     marca();d.addEventListener('click',function(ev){if(ev.target.closest('#wfsr,#wfsc')){wfset('dev_pers','1');setTimeout(marca,0)}})})();
-  (function(){var ps=d.querySelector('#wfps'),cp=d.querySelector('#wfcp2'),pv=wfget('passo')||'10',cv=wfget('capa')||'fundo';
+  (function(){var ps=d.querySelector('#wfps'),pv=wfget('passo')||'10';
     ps.innerHTML=['10','15','30'].map(function(n){return '<button type="button" data-v="'+n+'" class="'+(n===pv?'on':'')+'">'+n+'</button>'}).join('');
-    cp.innerHTML=[['esq','Esquerda'],['dir','Direita'],['fundo','Ao fundo'],['sis','Sistema']].map(function(x){return '<button type="button" data-v="'+x[0]+'" class="'+(x[0]===cv?'on':'')+'">'+T(x[1])+'</button>'}).join('');
     function liga(el,chave){el.onclick=function(ev){var b=ev.target.closest('button');if(!b)return;wfset(chave,b.dataset.v);[].forEach.call(el.children,function(c){c.classList.toggle('on',c===b)});try{window.wfRep()}catch(e){}}}
-    liga(ps,'passo');liga(cp,'capa')})();
+    liga(ps,'passo')})();
   (function(){var cw=d.querySelector('#wfcw'),cc=d.querySelector('#wfcc'),bv=d.querySelector('#wfbv');
     var bm=wfget('dev_batmin');bm=(bm===''||bm==null)?20:+bm;cw.checked=wfget('dev_wifi')==='1';cc.checked=wfget('dev_carga')==='1';
     function pinta(){bv.textContent=bm?bm+'%':T('Desl.')}

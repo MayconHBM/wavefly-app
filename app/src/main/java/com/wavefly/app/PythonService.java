@@ -317,7 +317,7 @@ public class PythonService extends Service {
         String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (estiloCapa().equals("sis") ? 0 : posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa + "|" + estiloCapa() + "|" + passoSeg();
         // Estilo Sistema: a notificação não é republicada a cada segundo; só a sessão é corrigida quando a posição salta (arrasto da barra).
-        if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 2500) atualizarSessao();
+        if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 400) atualizarEstadoSessao();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
@@ -424,8 +424,7 @@ public class PythonService extends Service {
 
     /** "esq", "dir" ou "fundo": onde fica a capa na notificação (escolhido no painel do desenvolvedor). */
     private String estiloCapa() {
-        String v = Idioma.prefs(this).getString("p_capa", "fundo");
-        return "dir".equals(v) || "esq".equals(v) || "sis".equals(v) ? v : "fundo";
+        return "sis";   // notificação de player do sistema (único estilo)
     }
 
     /** Tamanho do pulo dos botões (10, 15 ou 30 segundos). */
@@ -555,6 +554,34 @@ public class PythonService extends Service {
         return p;
     }
 
+    private synchronized void atualizarEstadoSessao() {
+        try {
+            if (sessao != null) definirEstadoSessao();
+        } catch (Throwable t) {
+            Log.w(TAG, "estado da sessão", t);
+        }
+    }
+
+    /** Só o estado de reprodução (posição, tocando/pausado), sem mexer nos metadados nem na notificação. */
+    private void definirEstadoSessao() {
+            long posAtual = pPosMs;
+            if (pTocando && pEm != 0) {
+                posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
+                if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
+            }
+            sessaoPosBase = posAtual;
+            sessaoPosEm = SystemClock.elapsedRealtime();
+            sessaoTocando = pTocando;
+            PlaybackState ps = new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
+                    .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                            posAtual, pTocando ? 1f : 0f, SystemClock.elapsedRealtime())
+                    .build();
+            sessao.setPlaybackState(ps);
+    }
+
     private synchronized void atualizarSessao() {
         try {
             if (sessao == null) {
@@ -601,22 +628,7 @@ public class PythonService extends Service {
             Bitmap cb = capaBmp;
             if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
-            long posAtual = pPosMs;
-            if (pTocando && pEm != 0) {
-                posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
-                if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
-            }
-            sessaoPosBase = posAtual;
-            sessaoPosEm = SystemClock.elapsedRealtime();
-            sessaoTocando = pTocando;
-            PlaybackState ps = new PlaybackState.Builder()
-                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
-                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
-                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
-                    .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                            posAtual, pTocando ? 1f : 0f, SystemClock.elapsedRealtime())
-                    .build();
-            sessao.setPlaybackState(ps);
+            definirEstadoSessao();
         } catch (Throwable t) {
             Log.w(TAG, "sessão de mídia", t);
         }
