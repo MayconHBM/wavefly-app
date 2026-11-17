@@ -224,6 +224,7 @@ public class PythonService extends Service {
 
     /** A cada segundo: atualiza a notificação e controla o encerramento por inatividade. */
     private static final Object ACORDA = new Object();
+    private String tituloPostado = "";
 
     /** Faz a rotina de notificação rodar já, sem esperar o próximo segundo. */
     static void acordar() {
@@ -319,6 +320,9 @@ public class PythonService extends Service {
         // Estilo Sistema: a notificação não é republicada a cada segundo; só a sessão é corrigida quando a posição salta (arrasto da barra).
         if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 400) atualizarEstadoSessao();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
+        // Troca de faixa: a notificação sai e volta (sobe de novo, como no YouTube Music)
+        if (musica && fixa && emPrimeiroPlano && !tituloPostado.isEmpty() && !pTitulo.equals(tituloPostado)) pararPrimeiroPlano(true);
+        if (musica) tituloPostado = pTitulo;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
         try {
@@ -648,16 +652,18 @@ public class PythonService extends Service {
     private void buscarCapa(final String rel) {
         if (rel == null || rel.isEmpty() || rel.equals(capaBuscando)) return;
         // mesma faixa: confere de novo a cada 8 s, para pegar capa removida ou trocada com a música tocando
-        if (rel.equals(capaDe) && SystemClock.elapsedRealtime() - capaQuando < 8000) return;
+        if (rel.equals(capaDe) && (SystemClock.elapsedRealtime() - capaQuando < 8000 || !pTocando)) return;
         capaBuscando = rel;
         new Thread(() -> {
             Bitmap bmp = null;
+            boolean falhou = false;
             try {
                 java.net.URL u = new java.net.URL("http://127.0.0.1:" + PORT + "/api/capa?f="
                         + java.net.URLEncoder.encode(rel, "UTF-8"));
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
                 c.setConnectTimeout(3000);
                 c.setReadTimeout(8000);
+                if (c.getResponseCode() == 404) throw new java.io.FileNotFoundException("sem capa");
                 java.io.InputStream in = c.getInputStream();
                 java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
                 byte[] buf = new byte[16384];
@@ -673,8 +679,17 @@ public class PythonService extends Service {
                 o = new BitmapFactory.Options();
                 o.inSampleSize = amostra;
                 bmp = BitmapFactory.decodeByteArray(dados, 0, dados.length, o);
+            } catch (java.io.FileNotFoundException t) {
+                // a música realmente não tem capa
             } catch (Throwable t) {
+                falhou = true;
                 Log.w(TAG, "capa da notificação", t);
+            }
+            if (falhou && rel.equals(capaDe) && capaBmp != null) {
+                // erro ou demora na busca (app em segundo plano): mantém a capa que já estava
+                capaQuando = SystemClock.elapsedRealtime();
+                capaBuscando = "";
+                return;
             }
             capaBmp = bmp;
             capaDe = rel;
