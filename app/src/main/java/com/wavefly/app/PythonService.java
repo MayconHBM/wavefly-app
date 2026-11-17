@@ -50,7 +50,7 @@ public class PythonService extends Service {
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
     /** Depois que não há mais o que manter em primeiro plano, espera um pouco antes de soltar. */
-    private static final long GRACA_MS = 8000L;
+    private static final long GRACA_MS = 2500L;
     private static final String TAG = "WaveFly";
 
     static volatile String status = "Iniciando…";
@@ -301,8 +301,10 @@ public class PythonService extends Service {
 
         if (musica) buscarCapa(pCapa);
         // A posição entra na chave só em segundos: no máximo uma atualização por segundo (o Android descarta o excesso).
-        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
+        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (estiloCapa().equals("sis") ? 0 : posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa + "|" + estiloCapa() + "|" + passoSeg();
+        // Estilo Sistema: a notificação não é republicada a cada segundo; só a sessão é corrigida quando a posição salta (arrasto da barra).
+        if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 2500) atualizarSessao();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
@@ -530,6 +532,16 @@ public class PythonService extends Service {
     }
 
     /** Sessão de mídia: dá os botões na tela de bloqueio / fone Bluetooth e o visual de player. */
+    private volatile long sessaoPosBase = 0, sessaoPosEm = 0;
+    private volatile boolean sessaoTocando = false;
+
+    /** Posição que o Android está mostrando agora, a partir do último estado enviado à sessão. */
+    private long posEsperadaSessao() {
+        long p = sessaoPosBase;
+        if (sessaoTocando) p += SystemClock.elapsedRealtime() - sessaoPosEm;
+        return p;
+    }
+
     private synchronized void atualizarSessao() {
         try {
             if (sessao == null) {
@@ -574,18 +586,20 @@ public class PythonService extends Service {
             Bitmap cb = capaBmp;
             if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
-                        long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
             long posAtual = pPosMs;
             if (pTocando && pEm != 0) {
                 posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
                 if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
             }
+            sessaoPosBase = posAtual;
+            sessaoPosEm = SystemClock.elapsedRealtime();
+            sessaoTocando = pTocando;
             PlaybackState ps = new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                             | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
                             | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
                     .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                            posAtual, pTocando ? 1f : 0f, em)
+                            posAtual, pTocando ? 1f : 0f, SystemClock.elapsedRealtime())
                     .build();
             sessao.setPlaybackState(ps);
         } catch (Throwable t) {
