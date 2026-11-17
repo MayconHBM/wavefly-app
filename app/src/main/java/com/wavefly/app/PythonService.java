@@ -52,7 +52,7 @@ public class PythonService extends Service {
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
     /** Depois que não há mais o que manter em primeiro plano, espera um pouco antes de soltar. */
-    private static final long GRACA_MS = 0L;
+    private static final long GRACA_MS = 2500L;
     private static final String TAG = "WaveFly";
 
     static volatile String status = "Iniciando…";

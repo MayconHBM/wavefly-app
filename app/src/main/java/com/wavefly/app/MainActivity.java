@@ -304,7 +304,8 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pDurMs = durMs;
             PythonService.pEm = SystemClock.elapsedRealtime();
             PythonService.pAtivo = ativo == 1;
-            if (mudou) PythonService.acordar();
+            // EXPERIMENTO (teste-13): sem acordar a rotina na hora, como no teste-8
+            // if (mudou) PythonService.acordar();
         }
 
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */
