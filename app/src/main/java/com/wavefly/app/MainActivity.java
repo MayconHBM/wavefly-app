@@ -298,11 +298,13 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pTitulo = titulo == null ? "" : titulo;
             PythonService.pSub = sub == null ? "" : sub;
             PythonService.pVideo = video == 1;
+            boolean mudou = PythonService.pTocando != (tocando == 1) || PythonService.pAtivo != (ativo == 1);
             PythonService.pTocando = tocando == 1;
             PythonService.pPosMs = posMs;
             PythonService.pDurMs = durMs;
             PythonService.pEm = SystemClock.elapsedRealtime();
             PythonService.pAtivo = ativo == 1;
+            if (mudou) PythonService.acordar();
         }
 
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */

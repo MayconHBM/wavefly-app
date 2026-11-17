@@ -13,6 +13,8 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -50,7 +52,7 @@ public class PythonService extends Service {
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
     /** Depois que não há mais o que manter em primeiro plano, espera um pouco antes de soltar. */
-    private static final long GRACA_MS = 2500L;
+    private static final long GRACA_MS = 0L;
     private static final String TAG = "WaveFly";
 
     static volatile String status = "Iniciando…";
@@ -221,11 +223,22 @@ public class PythonService extends Service {
     }
 
     /** A cada segundo: atualiza a notificação e controla o encerramento por inatividade. */
+    private static final Object ACORDA = new Object();
+
+    /** Faz a rotina de notificação rodar já, sem esperar o próximo segundo. */
+    static void acordar() {
+        synchronized (ACORDA) {
+            ACORDA.notifyAll();
+        }
+    }
+
     private void vigiar() {
         long ociosoDesde = 0;
         while (rodando) {
             try {
-                Thread.sleep(1000);
+                synchronized (ACORDA) {
+                    ACORDA.wait(1000);   // acorda antes se o player mudou de estado (pausa, troca de faixa)
+                }
             } catch (InterruptedException e) {
                 return;
             }
@@ -546,6 +559,8 @@ public class PythonService extends Service {
         try {
             if (sessao == null) {
                 sessao = new MediaSession(this, "WaveFly");
+                // O ouvinte precisa ficar na thread principal: esta rotina roda numa thread sem laço de mensagens,
+                // onde ligar o ouvinte sem Handler falha e a sessão ficava surda (barra não arrastava).
                 sessao.setCallback(new MediaSession.Callback() {
                     @Override
                     public void onSeekTo(long pos) {
@@ -576,7 +591,7 @@ public class PythonService extends Service {
                     public void onSkipToPrevious() {
                         MainActivity.comandoPlayer("prev");
                     }
-                });
+                }, new Handler(Looper.getMainLooper()));
             }
             sessao.setActive(true);
             MediaMetadata.Builder md = new MediaMetadata.Builder()
