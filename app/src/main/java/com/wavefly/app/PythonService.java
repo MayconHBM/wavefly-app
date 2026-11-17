@@ -13,6 +13,8 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -50,7 +52,7 @@ public class PythonService extends Service {
     private static final int NOTIF_ID = 1;
     private static final long OCIOSO_MS = 10 * 60 * 1000L;
     /** Depois que não há mais o que manter em primeiro plano, espera um pouco antes de soltar. */
-    private static final long GRACA_MS = 8000L;
+    private static final long GRACA_MS = 0L;
     private static final String TAG = "WaveFly";
 
     static volatile String status = "Iniciando…";
@@ -221,11 +223,22 @@ public class PythonService extends Service {
     }
 
     /** A cada segundo: atualiza a notificação e controla o encerramento por inatividade. */
+    private static final Object ACORDA = new Object();
+
+    /** Faz a rotina de notificação rodar já, sem esperar o próximo segundo. */
+    static void acordar() {
+        synchronized (ACORDA) {
+            ACORDA.notifyAll();
+        }
+    }
+
     private void vigiar() {
         long ociosoDesde = 0;
         while (rodando) {
             try {
-                Thread.sleep(1000);
+                synchronized (ACORDA) {
+                    ACORDA.wait(1000);   // acorda antes se o player mudou de estado (pausa, troca de faixa)
+                }
             } catch (InterruptedException e) {
                 return;
             }
@@ -301,8 +314,10 @@ public class PythonService extends Service {
 
         if (musica) buscarCapa(pCapa);
         // A posição entra na chave só em segundos: no máximo uma atualização por segundo (o Android descarta o excesso).
-        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
+        String chave = (dlPausado ? "P|" : "") + (musica ? "m|" + pTitulo + "|" + pSub + "|" + pTocando + "|" + (estiloCapa().equals("sis") ? 0 : posAgora() / 1000) + "|" + (capaBmp != null && capaDe.equals(pCapa)) : "d")
                 + "|" + baixando + "|" + feitos + "/" + total + "|" + fixa + "|" + estiloCapa() + "|" + passoSeg();
+        // Estilo Sistema: a notificação não é republicada a cada segundo; só a sessão é corrigida quando a posição salta (arrasto da barra).
+        if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 400) atualizarEstadoSessao();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
@@ -358,14 +373,32 @@ public class PythonService extends Service {
         String contagem = feitos + "/" + total;
         if (musica) {
             atualizarSessao();
-            if (estiloCapa().equals("fundo") && capaBmp != null && capaDe.equals(pCapa)) prepararFundo(capaBmp);
-            b.setColor(estiloCapa().equals("fundo") && fundoCor != 0 && fundoDe.equals(capaDe) ? fundoCor : 0xFF3B2314).setColorized(true).setShowWhen(false);
+            boolean comFundo = estiloCapa().equals("fundo") || estiloCapa().equals("sis");
+            if (comFundo && capaBmp != null && capaDe.equals(pCapa)) prepararFundo(capaBmp);
+            b.setColor(comFundo && fundoCor != 0 && fundoDe.equals(capaDe) ? fundoCor : 0xFF3B2314).setColorized(true).setShowWhen(false);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
             b.setContentText(pSub);
             b.setDeleteIntent(PendingIntent.getService(this, 9,
                     new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             String est = estiloCapa();
+            if (est.equals("sis") && sessao != null) {
+                // estilo "Sistema": notificação de player do próprio Android (capa de ponta a ponta, barra que arrasta)
+                b.setContentTitle(pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
+                b.setContentText(pSub);
+                Bitmap cb = capaBmp;
+                if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) b.setLargeIcon(cb);
+                b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, "Anterior", 5));
+                b.addAction(acao(ACTION_BACK10, R.drawable.ic_n_replay, "-" + passoSeg() + "s", 6));
+                b.addAction(acao(ACTION_PLAY_PAUSE, pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play, pTocando ? "Pausar" : "Tocar", 3));
+                b.addAction(acao(ACTION_FWD10, R.drawable.ic_n_forward, "+" + passoSeg() + "s", 7));
+                b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, "Próxima", 4));
+                b.setStyle(new Notification.MediaStyle().setMediaSession(sessao.getSessionToken()).setShowActionsInCompactView(0, 2, 4));
+                b.setDeleteIntent(PendingIntent.getService(this, 9,
+                        new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+                return b.build();
+            }
             int lg = est.equals("dir") ? R.layout.notif_player_dir : est.equals("fundo") ? R.layout.notif_player_fundo : R.layout.notif_player;
             int lp = est.equals("dir") ? R.layout.notif_player_small_dir : est.equals("fundo") ? R.layout.notif_player_small_fundo : R.layout.notif_player_small;
             android.widget.RemoteViews rv = visaoMusica(lg, baixando, feitos, total, contagem, true, est);
@@ -391,8 +424,7 @@ public class PythonService extends Service {
 
     /** "esq", "dir" ou "fundo": onde fica a capa na notificação (escolhido no painel do desenvolvedor). */
     private String estiloCapa() {
-        String v = Idioma.prefs(this).getString("p_capa", "esq");
-        return "dir".equals(v) || "fundo".equals(v) ? v : "esq";
+        return "sis";   // notificação de player do sistema (único estilo)
     }
 
     /** Tamanho do pulo dos botões (10, 15 ou 30 segundos). */
@@ -409,20 +441,27 @@ public class PythonService extends Service {
     private void prepararFundo(Bitmap src) {
         if (src == null || fundoDe.equals(capaDe)) return;
         try {
-            int w = 720, h = 264, cw = 330;          // área total e largura da capa à direita
+            int w = 720, h = 264, cw = 520;          // área total e largura da capa à direita
             float sa = (float) src.getWidth() / src.getHeight(), da = (float) cw / h;
             int sx, sy, sw, sh;
             if (sa > da) { sh = src.getHeight(); sw = (int) (sh * da); sx = (src.getWidth() - sw) / 2; sy = 0; }
             else { sw = src.getWidth(); sh = (int) (sw / da); sx = 0; sy = (src.getHeight() - sh) / 2; }
             Bitmap corte = Bitmap.createBitmap(src, sx, sy, Math.max(1, sw), Math.max(1, sh));
             int px = Bitmap.createScaledBitmap(src, 1, 1, true).getPixel(0, 0);
-            int cor = 0xFF000000 | (((px >> 16 & 0xFF) * 32 / 100) << 16) | (((px >> 8 & 0xFF) * 32 / 100) << 8) | ((px & 0xFF) * 32 / 100);
+            // cor viva tirada da capa (como no YouTube Music): mesmo tom, saturação decente e brilho médio-escuro
+            float[] hsv = new float[3];
+            android.graphics.Color.colorToHSV(px, hsv);
+            hsv[1] = Math.min(1f, Math.max(0.45f, hsv[1] * 1.15f));
+            hsv[2] = 0.46f;
+            int cor = android.graphics.Color.HSVToColor(hsv);
             Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             android.graphics.Canvas c = new android.graphics.Canvas(out);
             c.drawColor(cor);
             android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG | android.graphics.Paint.ANTI_ALIAS_FLAG);
             c.drawBitmap(corte, null, new android.graphics.Rect(w - cw, 0, w, h), p);
-            p.setShader(new android.graphics.LinearGradient(w - cw, 0, w - cw * 0.35f, 0, cor, cor & 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP));
+            p.setShader(new android.graphics.LinearGradient(w - cw, 0, w - cw * 0.12f, 0,
+                    new int[]{cor, (cor & 0x00FFFFFF) | 0xE0000000, (cor & 0x00FFFFFF) | 0x80000000, cor & 0x00FFFFFF},
+                    new float[]{0f, 0.35f, 0.7f, 1f}, android.graphics.Shader.TileMode.CLAMP));
             c.drawRect(w - cw, 0, w, h, p);
             fundoCor = cor;
             fundoBmp = out;
@@ -445,7 +484,8 @@ public class PythonService extends Service {
         rv.setTextViewText(R.id.n_titulo, pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
         long pos = posAgora();
         Bitmap cb = capaBmp;
-        boolean temCapa = cb != null && capaDe.equals(pCapa);
+        // enquanto a capa da faixa nova carrega, mantém a anterior (sem piscar o ícone genérico)
+        boolean temCapa = cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa));
         if (est.equals("fundo")) {
             if (temCapa) {
                 prepararFundo(cb);
@@ -504,11 +544,61 @@ public class PythonService extends Service {
     }
 
     /** Sessão de mídia: dá os botões na tela de bloqueio / fone Bluetooth e o visual de player. */
+    private volatile long sessaoPosBase = 0, sessaoPosEm = 0;
+    private volatile boolean sessaoTocando = false;
+
+    /** Posição que o Android está mostrando agora, a partir do último estado enviado à sessão. */
+    private long posEsperadaSessao() {
+        long p = sessaoPosBase;
+        if (sessaoTocando) p += SystemClock.elapsedRealtime() - sessaoPosEm;
+        return p;
+    }
+
+    private synchronized void atualizarEstadoSessao() {
+        try {
+            if (sessao != null) definirEstadoSessao();
+        } catch (Throwable t) {
+            Log.w(TAG, "estado da sessão", t);
+        }
+    }
+
+    /** Só o estado de reprodução (posição, tocando/pausado), sem mexer nos metadados nem na notificação. */
+    private void definirEstadoSessao() {
+            long posAtual = pPosMs;
+            if (pTocando && pEm != 0) {
+                posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
+                if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
+            }
+            sessaoPosBase = posAtual;
+            sessaoPosEm = SystemClock.elapsedRealtime();
+            sessaoTocando = pTocando;
+            PlaybackState ps = new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
+                    .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                            posAtual, pTocando ? 1f : 0f, SystemClock.elapsedRealtime())
+                    .build();
+            sessao.setPlaybackState(ps);
+    }
+
     private synchronized void atualizarSessao() {
         try {
             if (sessao == null) {
                 sessao = new MediaSession(this, "WaveFly");
+                // O ouvinte precisa ficar na thread principal: esta rotina roda numa thread sem laço de mensagens,
+                // onde ligar o ouvinte sem Handler falha e a sessão ficava surda (barra não arrastava).
                 sessao.setCallback(new MediaSession.Callback() {
+                    @Override
+                    public void onSeekTo(long pos) {
+                        Log.i(TAG, "seekTo " + pos);
+                        // mostra já a posição nova (senão a barra volta ao ponto antigo até a página informar de novo)
+                        pPosMs = Math.max(0, pos);
+                        pEm = SystemClock.elapsedRealtime();
+                        atualizarSessao();
+                        MainActivity.comandoPlayer("seek:" + pos);
+                    }
+
                     @Override
                     public void onPlay() {
                         MainActivity.comandoPlayer("play");
@@ -528,29 +618,17 @@ public class PythonService extends Service {
                     public void onSkipToPrevious() {
                         MainActivity.comandoPlayer("prev");
                     }
-                });
+                }, new Handler(Looper.getMainLooper()));
             }
             sessao.setActive(true);
             MediaMetadata.Builder md = new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
-                    .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub)
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, pDurMs > 0 ? pDurMs : -1);
             Bitmap cb = capaBmp;
-            if (cb != null && capaDe.equals(pCapa)) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
+            if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
-                        long em = pEm == 0 ? SystemClock.elapsedRealtime() : pEm;
-            long posAtual = pPosMs;
-            if (pTocando && pEm != 0) {
-                posAtual = pPosMs + (SystemClock.elapsedRealtime() - pEm);
-                if (pDurMs > 0 && posAtual > pDurMs) posAtual = pDurMs;
-            }
-            PlaybackState ps = new PlaybackState.Builder()
-                    .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
-                            | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
-                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-                    .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-                            posAtual, pTocando ? 1f : 0f, em)
-                    .build();
-            sessao.setPlaybackState(ps);
+            definirEstadoSessao();
         } catch (Throwable t) {
             Log.w(TAG, "sessão de mídia", t);
         }
@@ -570,16 +648,18 @@ public class PythonService extends Service {
     private void buscarCapa(final String rel) {
         if (rel == null || rel.isEmpty() || rel.equals(capaBuscando)) return;
         // mesma faixa: confere de novo a cada 8 s, para pegar capa removida ou trocada com a música tocando
-        if (rel.equals(capaDe) && SystemClock.elapsedRealtime() - capaQuando < 8000) return;
+        if (rel.equals(capaDe) && (SystemClock.elapsedRealtime() - capaQuando < 8000 || !pTocando)) return;
         capaBuscando = rel;
         new Thread(() -> {
             Bitmap bmp = null;
+            boolean falhou = false;
             try {
                 java.net.URL u = new java.net.URL("http://127.0.0.1:" + PORT + "/api/capa?f="
                         + java.net.URLEncoder.encode(rel, "UTF-8"));
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) u.openConnection();
                 c.setConnectTimeout(3000);
                 c.setReadTimeout(8000);
+                if (c.getResponseCode() == 404) throw new java.io.FileNotFoundException("sem capa");
                 java.io.InputStream in = c.getInputStream();
                 java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
                 byte[] buf = new byte[16384];
@@ -595,8 +675,17 @@ public class PythonService extends Service {
                 o = new BitmapFactory.Options();
                 o.inSampleSize = amostra;
                 bmp = BitmapFactory.decodeByteArray(dados, 0, dados.length, o);
+            } catch (java.io.FileNotFoundException t) {
+                // a música realmente não tem capa
             } catch (Throwable t) {
+                falhou = true;
                 Log.w(TAG, "capa da notificação", t);
+            }
+            if (falhou && rel.equals(capaDe) && capaBmp != null) {
+                // erro ou demora na busca (app em segundo plano): mantém a capa que já estava
+                capaQuando = SystemClock.elapsedRealtime();
+                capaBuscando = "";
+                return;
             }
             capaBmp = bmp;
             capaDe = rel;

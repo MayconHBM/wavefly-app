@@ -1394,7 +1394,7 @@ def definir_longas(minutos):
 def longa_demais(it, dur):
     """MP3 acima do limite escolhido no painel (com 3 min de margem)? Devolve a mensagem de aviso ou ''."""
     lim = DEV.get("longas_min", 0)
-    if not lim or it.get("fmt") != "mp3" or not dur:
+    if not lim or it.get("fmt") != "mp3" or not dur or it.get("forcar"):
         return ""
     if dur > (lim + 3) * 60:
         return "Longa demais (%d min). Limite: %d min. Mude em Desenvolvedor › Músicas longas." % (round(dur / 60), lim)
@@ -1533,7 +1533,7 @@ def _processar(it):
     titulo_preview = it.get("titulo") or ""
     aviso_longa = longa_demais(it, it.get("dur") or DURS.get(chave(it["url"]), 0))
     if aviso_longa:
-        marcar(it, "falha", aviso_longa)
+        marcar(it, "pulada", aviso_longa)
         return
     it["vel"] = "Preparando…" if titulo_preview else "Lendo título…"
     erro_info = None
@@ -1566,7 +1566,7 @@ def _processar(it):
         DURS[chave(it["url"])] = info["duration"]
     aviso_longa = longa_demais(it, info.get("duration") or 0)
     if aviso_longa:
-        marcar(it, "falha", aviso_longa)
+        marcar(it, "pulada", aviso_longa)
         return
     if it["cancel"]:
         raise RuntimeError("cancelado_pelo_usuario")
@@ -1824,7 +1824,7 @@ def acao(d):
                 matar_ffmpeg()
             else:
                 ITENS.remove(it)
-        elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha"):
+        elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha", "pulada"):
             it.update(status="fila", forcar=True, auto=True, cancel=False, _cook=False)
         elif a == "tentar_falhas":
             for i in ITENS:
@@ -1845,7 +1845,7 @@ def estado():
                "total": len(ITENS), "dec": ((fim or time.time()) - ini) if ini else 0, "aviso": SESS["aviso"],
                "agora": (at["titulo"] or at["url"]) if at else "",
                "pasta": CFG["atual"], "qualidade": CFG["qualidade"]}
-        for k in ("fila", "baixando", "ok", "falha", "duplicada", "cancelada"):
+        for k in ("fila", "baixando", "ok", "falha", "duplicada", "cancelada", "pulada"):
             out[k] = c.get(k, 0)
         alvo = [i for i in ITENS if i["status"] in ("fila", "baixando", "ok")]
         out["est"] = sum(est_bytes(i["dur"], i["fmt"], i["qual"], i["res"]) for i in alvo)
@@ -2087,11 +2087,52 @@ def lista_biblioteca(com_dur=False):
     return out
 
 
+RESTOS_PASTA = (".jpg", ".jpeg", ".png", ".webp", ".part", ".ytdl", ".temp", ".txt", ".json")
+
+
+def apagar_pasta(nome, falhas):
+    """Apaga uma pasta (playlist) inteira: as músicas/vídeos e os restos (capas, parciais). Devolve quantas mídias foram apagadas."""
+    p = caminho_seguro(nome)
+    if not p or not os.path.isdir(p) or os.path.realpath(p) == os.path.realpath(raiz()):
+        falhas.append("pasta inválida")
+        dev_log("erro", "apagar pasta: caminho inválido (%s)" % str(nome)[:60])
+        return 0
+    n = 0
+    for d, _, ns in os.walk(p):
+        for a in ns:
+            f = os.path.join(d, a)
+            ml = a.lower()
+            midia = ml.endswith(EXTS)
+            if not (midia or ml.endswith(RESTOS_PASTA) or ".temp." in ml):
+                continue
+            try:
+                try:
+                    os.remove(f)
+                except PermissionError:
+                    os.chmod(f, 0o666)
+                    os.remove(f)
+                SEM_CAPA.discard(f)
+                if midia:
+                    n += 1
+            except OSError as ex:
+                falhas.append(str(ex)[:60])
+                dev_log("erro", "apagar pasta: %s (%s)" % (str(ex)[:80], a[:60]))
+    for d, _, _ in os.walk(p, topdown=False):
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+    return n
+
+
 def apagar(rels):
     n = 0
     falhas = []
     NOMES["k"] = None
     for rel in rels:
+        if isinstance(rel, str) and rel.startswith("pasta:"):
+            n += apagar_pasta(rel[6:], falhas)
+            continue
         p = caminho_seguro(rel)
         if not p:
             falhas.append("caminho inválido")
@@ -3182,27 +3223,29 @@ function rowHTML(i){let sub='',cls='';
  if(i.status==='baixando')sub=(i.vel&&/Lendo|Convertendo|Juntando|Baixando/.test(i.vel)?i.vel:(i.pct||0)+'%'+(i.vel?' · '+i.vel:''));
  else if(i.status==='falha'){sub='Falhou: '+(i.erro||'erro');cls=' er'}
  else if(i.status==='duplicada')sub='Já existe na pasta (será ignorado)';
+ else if(i.status==='pulada')sub=i.erro||'Pulada';
  else if(i.status==='ok')sub='Concluído';
  else if(i.status==='cancelada')sub='Cancelada';
  else sub=(i.sub&&!/lendo nome/i.test(i.sub))?'Na fila · '+i.sub:'Na fila';
  let a='';
  if(i.status==='duplicada'||i.status==='cancelada'||i.status==='falha')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
+ if(i.status==='pulada')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='falha')a+=`<button class="t" data-a="retentar" data-id="${i.id}">Tentar de novo</button>`;
  if(i.status==='ok'&&i.arq&&C.servidor)a+=`<a class="t" style="color:var(--at);font-size:13.5px;padding:4px 6px" href="/api/baixar?f=${encodeURIComponent(i.arq)}" download>Receber</a>`;
  a+=`<button class="t" data-a="remover" data-id="${i.id}">${i.status==='baixando'?'Cancelar':'Remover'}</button>`;
  const v=vidOf(i.url),th=v?`<img class="ft" loading="lazy" src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`:'<span class="ft"></span>';
  return `<div class="it" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
-const ORD={baixando:0,fila:1,falha:2,duplicada:3,cancelada:4,ok:5};
-function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada,at=s.fila+s.baixando>0;
+const ORD={baixando:0,fila:1,falha:2,pulada:3,duplicada:3,cancelada:4,ok:5};
+function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada+(s.pulada||0),at=s.fila+s.baixando>0;
  if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt();libAtual(1)}}
  document.title=(at?`${c}/${s.total} · `:'')+APPN;$('#fila').hidden=!s.total;if(!s.total){LAST='';READY=[];return}
  READY=s.itens.filter(i=>i.status==='ok'&&i.arq).map(i=>i.arq);$('#entrega').hidden=!(C.servidor&&READY.length);$('#en').textContent=READY.length;
  $('#eq').classList.toggle('on',at);document.body.classList.toggle('baixando',at);$('#fh').textContent=at?'Baixando Fila':'Concluído';$('#fc').textContent=`${c} de ${s.total}`;$('#fbar').style.width=Math.round(c/s.total*100)+'%';
- const p=[];if(s.ok)p.push(s.ok+' concluídas');if(s.duplicada)p.push(s.duplicada+' duplicadas');if(s.falha)p.push(s.falha+' falhas');
+ const p=[];if(s.ok)p.push(s.ok+' concluídas');if(s.duplicada)p.push(s.duplicada+' duplicadas');if(s.pulada)p.push(s.pulada+' puladas');if(s.falha)p.push(s.falha+' falhas');
  p.push(fmt(s.dec));if(at&&c>0)p.push('faltam ~'+fmt(s.dec/c*(s.fila+s.baixando)));
  if(s.est)p.push('~'+tamf(s.est)+' est.');$('#fs').textContent=p.join(' · ');
  $('#fav').hidden=!s.aviso;$('#fav').textContent=s.aviso||'';
- $('#bcanc').hidden=!at;$('#blimpa').hidden=!(s.ok+s.duplicada);
+ $('#bcanc').hidden=!at;$('#blimpa').hidden=!(s.ok+s.duplicada+(s.pulada||0));
  const k=JSON.stringify(s.itens)+'|'+QVN+'|'+ABAF;if(k===LAST)return;LAST=k;
  const it=s.itens.slice().sort((a,b)=>ORD[a.status]-ORD[b.status]||a.id-b.id);
  const nOk=it.filter(x=>x.status==='ok').length, nFila=it.length-nOk;
@@ -3268,8 +3311,9 @@ function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
  $('#bsa').hidden=!(LIBQ&&LIBQ.length>SEL.size);
- $('#bedit').hidden=SEL.size!==1;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
- $('#selc').textContent=SEL.size?(SEL.size+(SEL.size>1?' selecionados':' selecionado')):'';
+ const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=SEL.size-nP;
+ $('#bedit').hidden=SEL.size!==1||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
+ $('#selc').textContent=!SEL.size?'':nP?(nP+(nP>1?' pastas':' pasta')+(nF?' · '+nF+(nF>1?' arquivos':' arquivo'):'')):(SEL.size+(SEL.size>1?' selecionados':' selecionado'));
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
 function nrep(){return RG.reduce((a,g)=>a+g.arquivos.filter(x=>x.marcada).length,0)}
@@ -3307,7 +3351,7 @@ function dlib(){
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
  } else {
-  hPls = pls.map(p=>`<div class="pl-card">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
+  hPls = pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
   if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
   LIBQ=mus.map(x=>x.rel);
   hPls += mus.slice(0,LIBN).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`).join('');
@@ -3337,6 +3381,8 @@ document.addEventListener('click',e=>{
  if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
  const pr=e.target.closest('[data-playrel]');
  if(pr){tocar(pr.dataset.playrel,pr.closest('#lib,#libv'));return}
+ const cp=e.target.closest('input[data-pasta]');
+ if(cp){const k='pasta:'+cp.dataset.pasta;cp.checked?SEL.add(k):SEL.delete(k);updbars();return}
  const cb=e.target.closest('input[data-rel]');
  if(cb){const rel=cb.dataset.rel;cb.checked?SEL.add(rel):SEL.delete(rel);updbars()}
 });
@@ -3379,13 +3425,16 @@ function tocar(rel,box){
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
- $('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';ST_STOP=false;
- (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;
- const a=MA();a.volume=VOL;
- a.onended=()=>proxima(1);a.onerror=()=>toast('Não consegui reproduzir este arquivo');
+ ST_STOP=false;
+ let a=MA();const reuse=!vid&&!!a&&a.tagName==='AUDIO'&&$('#pl-audio').contains(a);
+ if(reuse){a.src=url;const r=a.play();if(r&&r.catch)r.catch(()=>{})}
+ else{$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
+  (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;a=MA()}
+ a.volume=VOL;
+ a.onended=()=>proxima(1);a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
  a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>plState(ST_STOP?'stop':'pause');
  a.ontimeupdate=plTime;a.onloadedmetadata=plTime;a.ondurationchange=plTime;
- plState('pause');plTime();
+ if(!reuse)plState('pause');plTime();
  if('mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:x.nome,artist:APPN,artwork:[{src:capa}]});
   navigator.mediaSession.setActionHandler('nexttrack',()=>proxima(1));navigator.mediaSession.setActionHandler('previoustrack',()=>proxima(-1))}catch(e){}}
  marcarNow()}
@@ -3406,15 +3455,17 @@ const VOLI=$('#vol');VOLI.value=Math.round(VOL*100);
 VOLI.oninput=()=>{VOL=VOLI.value/100;const a=MA();if(a)a.volume=VOL;try{localStorage.setItem('wf_vol',String(VOL))}catch(e){}};
 try{new ResizeObserver(()=>document.documentElement.style.setProperty('--plh',($('#pl').offsetHeight||0)+'px')).observe($('#pl'))}catch(e){}
 function stopPlayer(){
- const a=MA();if(a){ST_STOP=true;a.pause();a.removeAttribute('src');a.load()}
+ const a=MA();if(a){ST_STOP=true;a.onerror=null;a.onended=null;a.pause();a.removeAttribute('src');a.load()}
  $('#pl').hidden=true;$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
  $('#pl').classList.remove('rodando');document.body.classList.remove('pon');plSemTema();CUR='';marcarNow()
 }
-function stopIf(r){if(CUR&&r.includes(CUR))stopPlayer()}
+function stopIf(r){if(CUR&&r.some(x=>x===CUR||(x.startsWith('pasta:')&&CUR.startsWith(x.slice(6)+'/'))))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
 $('#bsa').onclick=()=>{(LIBQ||[]).forEach(r=>SEL.add(r));dlib()};
-$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;if(await conf(`Apagar <b>${n}</b> arquivo${n>1?'s':''} do aparelho?`,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagado'+(r.apagadas===1?'':'s')+((r.falhas&&r.falhas.length)?' · '+r.falhas.length+' não deu: '+r.falhas[0]:''));JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
+$('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=n-nP;
+ const msg=(nP?`Apagar <b>${nP}</b> ${nP>1?'pastas inteiras':'pasta inteira'}, com todos os arquivos dentro?`+(nF?'<br>':''):'')+(nF?`Apagar <b>${nF}</b> arquivo${nF>1?'s':''} do aparelho?`:'');
+ if(await conf(msg,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagado'+(r.apagadas===1?'':'s')+((r.falhas&&r.falhas.length)?' · '+r.falhas.length+' não deu: '+r.falhas[0]:''));JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
 
 $('#bvar').onclick=async()=>{const b=$('#bvar');b.disabled=true;b.textContent='Procurando...';
  try{RG=(await api('/api/repetidas',{})).grupos;drep();if(!RG.length)$('#rep').innerHTML=`<div class="empty">${WAVE}<p>Nenhuma repetida encontrada.</p></div>`}catch(e){toast(e.message)}b.disabled=false;b.textContent='Procurar repetidas'};
