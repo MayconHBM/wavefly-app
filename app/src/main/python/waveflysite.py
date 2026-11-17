@@ -3310,7 +3310,7 @@ async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?
 function updbars(){
  const off=$('#v-musicas').hidden,rep=!$('#m-rep').hidden,n=nrep();
  $('#libbar').hidden=off||rep||!SEL.size;
- $('#bsa').hidden=!(LIBQ&&LIBQ.length>SEL.size);
+ $('#bsa').hidden=!selTudo().some(r=>!SEL.has(r));
  const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=SEL.size-nP;
  $('#bedit').hidden=SEL.size!==1||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
  $('#selc').textContent=!SEL.size?'':nP?(nP+(nP>1?' pastas':' pasta')+(nF?' · '+nF+(nF>1?' arquivos':' arquivo'):'')):(SEL.size+(SEL.size>1?' selecionados':' selecionado'));
@@ -3462,7 +3462,9 @@ function stopPlayer(){
 function stopIf(r){if(CUR&&r.some(x=>x===CUR||(x.startsWith('pasta:')&&CUR.startsWith(x.slice(6)+'/'))))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
-$('#bsa').onclick=()=>{(LIBQ||[]).forEach(r=>SEL.add(r));dlib()};
+/* Selecionar tudo: dentro de uma pasta, as músicas dela; na tela das pastas, se já há pasta marcada, todas as pastas; senão, as músicas soltas */
+function selTudo(){if(!ACTIVE_PL&&[...SEL].some(r=>r.startsWith('pasta:')))return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
+$('#bsa').onclick=()=>{selTudo().forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=n-nP;
  const msg=(nP?`Apagar <b>${nP}</b> ${nP>1?'pastas inteiras':'pasta inteira'}, com todos os arquivos dentro?`+(nF?'<br>':''):'')+(nF?`Apagar <b>${nF}</b> arquivo${nF>1?'s':''} do aparelho?`:'');
  if(await conf(msg,'Apagar')){try{stopIf([...SEL]);const r=await api('/api/apagar',{rels:[...SEL]});SEL.clear();toast(r.apagadas+' apagado'+(r.apagadas===1?'':'s')+((r.falhas&&r.falhas.length)?' · '+r.falhas.length+' não deu: '+r.falhas[0]:''));JA.clear();JAK.clear();loadLib()}catch(e){toast(e.message)}}};
