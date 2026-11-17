@@ -224,7 +224,6 @@ public class PythonService extends Service {
 
     /** A cada segundo: atualiza a notificação e controla o encerramento por inatividade. */
     private static final Object ACORDA = new Object();
-    private String tituloPostado = "";
 
     /** Faz a rotina de notificação rodar já, sem esperar o próximo segundo. */
     static void acordar() {
@@ -320,9 +319,6 @@ public class PythonService extends Service {
         // Estilo Sistema: a notificação não é republicada a cada segundo; só a sessão é corrigida quando a posição salta (arrasto da barra).
         if (musica && estiloCapa().equals("sis") && sessao != null && Math.abs(posAgora() - posEsperadaSessao()) > 400) atualizarEstadoSessao();
         if (chave.equals(ultimaChave) && fixa == emPrimeiroPlano) return;
-        // Troca de faixa: a notificação sai e volta (sobe de novo, como no YouTube Music)
-        if (musica && fixa && emPrimeiroPlano && !tituloPostado.isEmpty() && !pTitulo.equals(tituloPostado)) pararPrimeiroPlano(true);
-        if (musica) tituloPostado = pTitulo;
 
         Notification n = montar(baixando, musica, feitos, total, fixa);
         try {
