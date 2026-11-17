@@ -370,8 +370,7 @@ public class PythonService extends Service {
             int lp = est.equals("dir") ? R.layout.notif_player_small_dir : est.equals("fundo") ? R.layout.notif_player_small_fundo : R.layout.notif_player_small;
             android.widget.RemoteViews rv = visaoMusica(lg, baixando, feitos, total, contagem, true, est);
             android.widget.RemoteViews rvp = visaoMusica(lp, baixando, feitos, total, contagem, false, est);
-            // no estilo "Ao fundo" a capa e a cor cobrem a notificação inteira, até a faixa do título do app
-            if (!est.equals("fundo")) b.setStyle(new Notification.DecoratedCustomViewStyle());
+            b.setStyle(new Notification.DecoratedCustomViewStyle());
             b.setCustomContentView(rvp);
             b.setCustomBigContentView(rv);
         } else {
