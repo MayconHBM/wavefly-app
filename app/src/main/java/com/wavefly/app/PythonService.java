@@ -358,14 +358,32 @@ public class PythonService extends Service {
         String contagem = feitos + "/" + total;
         if (musica) {
             atualizarSessao();
-            if (estiloCapa().equals("fundo") && capaBmp != null && capaDe.equals(pCapa)) prepararFundo(capaBmp);
-            b.setColor(estiloCapa().equals("fundo") && fundoCor != 0 && fundoDe.equals(capaDe) ? fundoCor : 0xFF3B2314).setColorized(true).setShowWhen(false);
+            boolean comFundo = estiloCapa().equals("fundo") || estiloCapa().equals("sis");
+            if (comFundo && capaBmp != null && capaDe.equals(pCapa)) prepararFundo(capaBmp);
+            b.setColor(comFundo && fundoCor != 0 && fundoDe.equals(capaDe) ? fundoCor : 0xFF3B2314).setColorized(true).setShowWhen(false);
             b.setContentTitle(pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
             b.setContentText(pSub);
             b.setDeleteIntent(PendingIntent.getService(this, 9,
                     new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             String est = estiloCapa();
+            if (est.equals("sis") && sessao != null) {
+                // estilo "Sistema": notificação de player do próprio Android (capa de ponta a ponta, barra que arrasta)
+                b.setContentTitle(pTitulo.isEmpty() ? "WaveFly YT" : pTitulo);
+                b.setContentText(pSub);
+                Bitmap cb = capaBmp;
+                if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) b.setLargeIcon(cb);
+                b.addAction(acao(ACTION_PREV, R.drawable.ic_n_prev, "Anterior", 5));
+                b.addAction(acao(ACTION_BACK10, R.drawable.ic_n_replay, "-" + passoSeg() + "s", 6));
+                b.addAction(acao(ACTION_PLAY_PAUSE, pTocando ? R.drawable.ic_n_pause : R.drawable.ic_n_play, pTocando ? "Pausar" : "Tocar", 3));
+                b.addAction(acao(ACTION_FWD10, R.drawable.ic_n_forward, "+" + passoSeg() + "s", 7));
+                b.addAction(acao(ACTION_NEXT, R.drawable.ic_n_next, "Próxima", 4));
+                b.setStyle(new Notification.MediaStyle().setMediaSession(sessao.getSessionToken()).setShowActionsInCompactView(0, 2, 4));
+                b.setDeleteIntent(PendingIntent.getService(this, 9,
+                        new Intent(this, PythonService.class).setAction(ACTION_DISPENSADA),
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+                return b.build();
+            }
             int lg = est.equals("dir") ? R.layout.notif_player_dir : est.equals("fundo") ? R.layout.notif_player_fundo : R.layout.notif_player;
             int lp = est.equals("dir") ? R.layout.notif_player_small_dir : est.equals("fundo") ? R.layout.notif_player_small_fundo : R.layout.notif_player_small;
             android.widget.RemoteViews rv = visaoMusica(lg, baixando, feitos, total, contagem, true, est);
@@ -392,7 +410,7 @@ public class PythonService extends Service {
     /** "esq", "dir" ou "fundo": onde fica a capa na notificação (escolhido no painel do desenvolvedor). */
     private String estiloCapa() {
         String v = Idioma.prefs(this).getString("p_capa", "fundo");
-        return "dir".equals(v) || "esq".equals(v) ? v : "fundo";
+        return "dir".equals(v) || "esq".equals(v) || "sis".equals(v) ? v : "fundo";
     }
 
     /** Tamanho do pulo dos botões (10, 15 ou 30 segundos). */
@@ -518,6 +536,11 @@ public class PythonService extends Service {
                 sessao = new MediaSession(this, "WaveFly");
                 sessao.setCallback(new MediaSession.Callback() {
                     @Override
+                    public void onSeekTo(long pos) {
+                        MainActivity.comandoPlayer("seek:" + pos);
+                    }
+
+                    @Override
                     public void onPlay() {
                         MainActivity.comandoPlayer("play");
                     }
@@ -541,7 +564,8 @@ public class PythonService extends Service {
             sessao.setActive(true);
             MediaMetadata.Builder md = new MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, pTitulo)
-                    .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub);
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, pSub)
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, pDurMs > 0 ? pDurMs : -1);
             Bitmap cb = capaBmp;
             if (cb != null && (capaDe.equals(pCapa) || capaBuscando.equals(pCapa))) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, cb);
             sessao.setMetadata(md.build());
@@ -554,7 +578,7 @@ public class PythonService extends Service {
             PlaybackState ps = new PlaybackState.Builder()
                     .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                             | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
-                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+                            | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO)
                     .setState(pTocando ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
                             posAtual, pTocando ? 1f : 0f, em)
                     .build();
