@@ -370,7 +370,8 @@ public class PythonService extends Service {
             int lp = est.equals("dir") ? R.layout.notif_player_small_dir : est.equals("fundo") ? R.layout.notif_player_small_fundo : R.layout.notif_player_small;
             android.widget.RemoteViews rv = visaoMusica(lg, baixando, feitos, total, contagem, true, est);
             android.widget.RemoteViews rvp = visaoMusica(lp, baixando, feitos, total, contagem, false, est);
-            b.setStyle(new Notification.DecoratedCustomViewStyle());
+            // no estilo "Ao fundo" a capa e a cor cobrem a notificação inteira, até a faixa do título do app
+            if (!est.equals("fundo")) b.setStyle(new Notification.DecoratedCustomViewStyle());
             b.setCustomContentView(rvp);
             b.setCustomBigContentView(rv);
         } else {
@@ -409,14 +410,19 @@ public class PythonService extends Service {
     private void prepararFundo(Bitmap src) {
         if (src == null || fundoDe.equals(capaDe)) return;
         try {
-            int w = 720, h = 264, cw = 440;          // área total e largura da capa à direita
+            int w = 720, h = 264, cw = 520;          // área total e largura da capa à direita
             float sa = (float) src.getWidth() / src.getHeight(), da = (float) cw / h;
             int sx, sy, sw, sh;
             if (sa > da) { sh = src.getHeight(); sw = (int) (sh * da); sx = (src.getWidth() - sw) / 2; sy = 0; }
             else { sw = src.getWidth(); sh = (int) (sw / da); sx = 0; sy = (src.getHeight() - sh) / 2; }
             Bitmap corte = Bitmap.createBitmap(src, sx, sy, Math.max(1, sw), Math.max(1, sh));
             int px = Bitmap.createScaledBitmap(src, 1, 1, true).getPixel(0, 0);
-            int cor = 0xFF000000 | (((px >> 16 & 0xFF) * 42 / 100) << 16) | (((px >> 8 & 0xFF) * 42 / 100) << 8) | ((px & 0xFF) * 42 / 100);
+            // cor viva tirada da capa (como no YouTube Music): mesmo tom, saturação decente e brilho médio-escuro
+            float[] hsv = new float[3];
+            android.graphics.Color.colorToHSV(px, hsv);
+            hsv[1] = Math.min(1f, Math.max(0.45f, hsv[1] * 1.15f));
+            hsv[2] = 0.46f;
+            int cor = android.graphics.Color.HSVToColor(hsv);
             Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             android.graphics.Canvas c = new android.graphics.Canvas(out);
             c.drawColor(cor);
