@@ -14,7 +14,7 @@
         android:allowBackup="false"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="WaveFly YT"
+        android:label="WaveFly Nativo"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.WaveFly"
@@ -24,6 +24,14 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
             android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+        </activity>
+
+        <activity
+            android:name=".NativoActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -37,8 +45,8 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard" />
 
         <!-- Ícone de abertura (nome mantido para não perder o atalho já criado). -->
-        <activity-alias android:name=".Icone0" android:targetActivity=".MainActivity" android:enabled="true"
-            android:exported="true" android:icon="@mipmap/ic_launcher" android:label="WaveFly YT">
+        <activity-alias android:name=".Icone0" android:targetActivity=".NativoActivity" android:enabled="true"
+            android:exported="true" android:icon="@mipmap/ic_launcher" android:label="WaveFly Nativo">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

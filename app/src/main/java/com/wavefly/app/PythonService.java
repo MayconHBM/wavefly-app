@@ -37,7 +37,7 @@ import com.chaquo.python.android.AndroidPlatform;
  * - Fora da tela e sem fazer nada por 10 minutos, encerra sozinho.
  */
 public class PythonService extends Service {
-    static final int PORT = 8773;
+    static final int PORT = 8774;   // outra porta que o app oficial, para os dois rodarem juntos
     static final String ACTION_STOP = "com.wavefly.app.STOP";
     static final String ACTION_CANCEL = "com.wavefly.app.CANCEL";
     static final String ACTION_PLAY_PAUSE = "com.wavefly.app.PLAY_PAUSE";

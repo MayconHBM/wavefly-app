@@ -280,6 +280,11 @@ public class MainActivity extends AppCompatActivity {
 
     /** Manda um comando (play, pause, next, prev) para o player da página. Usado pela notificação. */
     static void comandoPlayer(final String cmd) {
+        final java.util.function.Consumer<String> nat = NativoHook.cmd;
+        if (nat != null) {
+            new Handler(Looper.getMainLooper()).post(() -> nat.accept(cmd));
+            return;
+        }
         final MainActivity a = atual;
         if (a == null) return;
         a.runOnUiThread(() -> {
