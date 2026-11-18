@@ -147,6 +147,8 @@ def limpar_erro(ex):
 
 def bloqueio_youtube(m):
     m = m.lower()
+    if "confirm your age" in m or "age-restrict" in m:
+        return False          # restrição de idade não é bloqueio de robô: só o login resolve, e esperar não adianta
     return "not a bot" in m or "sign in to confirm" in m
 
 
@@ -1023,6 +1025,10 @@ def limpar_cancelado(it, so_sobras=False):
 
 def amigavel(erro):
     e = (erro or "").lower()
+    if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "copyright")):
+        return "Bloqueado por direitos autorais ou pela região."
+    if "confirm your age" in e or "age-restrict" in e:
+        return "Restrição de idade: precisa entrar com a conta do YouTube (Ajustes)."
     if any(x in e for x in ("unsupported url", "extractor", "not a valid url", "no suitable", "is not a valid", "invalid url")):
         return "Link não reconhecido. Confira se ele está correto."
     if any(x in e for x in ("video unavailable", "private video", "has been removed", "no longer available", "this video is", "not available")):
@@ -1693,12 +1699,14 @@ def tratar_falha(it, erro):
     if bloqueio:
         acionar_freio("YouTube pediu confirmação (bloqueio)")
         DEV["esfriar"] = time.time() + 240
-    permanente = (any(x in e for x in ("private video", "members-only", "copyright")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
+    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
     tent = it.get("_tent", 0) + 1
     it["_tent"] = tent
+    if suspeito_indisp and not permanente and not bloqueio and tent >= 2:
+        permanente = True        # "indisponível" depois de 2 tentativas: não adianta insistir (poupa vaga e tempo no lote)
     if not permanente and tent <= 4:
         atraso = 0 if (tent == 1 and not bloqueio) else (90 * tent if bloqueio else 12 * tent)
         # Nos testes, trocar de cliente do YouTube sempre piorou ("format not available"), então fica o de sempre.
@@ -2087,6 +2095,69 @@ def lista_biblioteca(com_dur=False):
     return out
 
 
+def mover_copiar(rels, destino, copiar=False):
+    """Move (ou copia) músicas para outra playlist (pasta). destino "" = raiz. Cria a pasta se não existir.
+    Leva junto a imagem de capa ao lado. Nome repetido no destino vira "nome (2)". Devolve {ok, pulou, falhas}."""
+    destino = (destino or "").strip().strip("/\\")
+    if any(c in destino for c in '\\:*?"<>|') or ".." in destino.split("/"):
+        raise ValueError("Nome de playlist inválido")
+    r = os.path.realpath(raiz())
+    dest = os.path.realpath(os.path.join(r, destino)) if destino else r
+    if dest != r and not dest.startswith(r + os.sep):
+        raise ValueError("Destino inválido")
+    os.makedirs(dest, exist_ok=True)
+    ok = pulou = 0
+    falhas = []
+    NOMES["k"] = None
+    for rel in rels or []:
+        if not isinstance(rel, str) or rel.startswith("pasta:"):
+            continue
+        p = caminho_seguro(rel)
+        if not p or not os.path.isfile(p) or not p.lower().endswith(EXTS):
+            falhas.append("arquivo não encontrado")
+            continue
+        if os.path.dirname(p) == dest:
+            pulou += 1          # já está nessa pasta
+            continue
+        base, ext = os.path.splitext(os.path.basename(p))
+        nome, n = base, 2
+        while os.path.exists(os.path.join(dest, nome + ext)):
+            nome = "%s (%d)" % (base, n)
+            n += 1
+        alvo = os.path.join(dest, nome + ext)
+        try:
+            if copiar:
+                shutil.copy2(p, alvo)
+            else:
+                shutil.move(p, alvo)
+            for e in (".jpg", ".jpeg", ".png", ".webp"):       # capa solta ao lado
+                cap = os.path.splitext(p)[0] + e
+                if os.path.isfile(cap):
+                    try:
+                        (shutil.copy2 if copiar else shutil.move)(cap, os.path.splitext(alvo)[0] + e)
+                    except OSError:
+                        pass
+            try:                                               # miniatura em cache acompanha o arquivo
+                c_old, c_new = _cache_capa(p), _cache_capa(alvo)
+                if os.path.isfile(c_old):
+                    (shutil.copy2 if copiar else shutil.move)(c_old, c_new)
+            except Exception:
+                pass
+            if not copiar:
+                if os.path.realpath(p) in SEM_CAPA:
+                    SEM_CAPA.discard(os.path.realpath(p))
+                    SEM_CAPA.add(os.path.realpath(alvo))
+                _trocar_caminho(p, alvo)
+                limpar_pasta_vazia(p)
+            ok += 1
+        except OSError as ex:
+            falhas.append(str(ex)[:80])
+            dev_log("erro", "mover: %s (%s)" % (str(ex)[:80], rel[:60]))
+    if not copiar:
+        _salvar_sem_capa()
+    return {"ok": ok, "pulou": pulou, "falhas": falhas}
+
+
 RESTOS_PASTA = (".jpg", ".jpeg", ".png", ".webp", ".part", ".ytdl", ".temp", ".txt", ".json")
 
 
@@ -2473,6 +2544,8 @@ class H(BaseHTTPRequestHandler):
                 return self._json(aplicar_cfg(d))
             if p == "/api/apagar":
                 return self._json(apagar(d.get("rels") or []))
+            if p == "/api/mover":
+                return self._json(mover_copiar(d.get("rels") or [], d.get("destino", ""), bool(d.get("copiar"))))
             if p == "/api/converter":
                 return self._json(converter_mp3(d.get("rels") or []))
             if p == "/api/etiqueta":
@@ -2756,6 +2829,7 @@ body.pon{padding-bottom:calc(var(--plh,150px) + 40px + env(safe-area-inset-botto
 .rb2 svg.i{width:46%;height:46%}
 .rb2.big{flex:1.25;max-width:58px;background:#c8581f;color:#f6e7c8;border-width:3px;box-shadow:0 3px 8px rgb(80 30 5 / .4)}
 .rb2.sp{border-color:transparent}
+.rb2.on{background:#c8581f;color:#f6e7c8;border-color:#c8581f}
 .rb2:active,.rb4:active{transform:scale(.93)}
 .vrow{margin-top:10px}
 #vol{display:block;width:100%;height:22px;padding:0;border:0;background:transparent;-webkit-appearance:none;appearance:none}
@@ -2989,7 +3063,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
 <input type="file" id="edfile" accept="image/*" hidden>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
-<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bdel">Apagar</button></div></div>
+<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -3004,9 +3078,19 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
     <button class="rb2" id="bff" aria-label="Avançar 10 segundos" data-i="ff"></button>
     <button class="rb2" id="plnext" aria-label="Próxima" data-i="next"></button>
   </div>
+  <div class="btns" id="btns2" style="margin-top:8px;justify-content:center;gap:22px"><button class="rb2" id="bshuf" aria-label="Aleatório" data-i="shuf"></button><button class="rb2" id="brepm" aria-label="Repetir" data-i="rep"></button></div>
+  <div class="sm mut" id="modolbl" style="text-align:center;margin-top:4px" hidden></div>
   <div class="vrow" id="vrow" hidden><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"></div>
   <div id="pl-audio" hidden></div>
 </div>
+
+<div class="sheet" id="mvs"><div class="spn">
+  <div class="grip"></div>
+  <div class="row"><b id="mvt" style="font-size:17px">Mover para…</b><button class="t" id="mvx" style="color:var(--at);font-weight:600">Fechar</button></div>
+  <div class="sg full" id="mvmodo" style="margin:10px 0"><button data-v="mover" class="on">Mover</button><button data-v="copiar">Copiar</button></div>
+  <div id="mvl"></div>
+  <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="mvnew" placeholder="Nova playlist…" maxlength="80" style="flex:1"><button class="t" id="mvgo" style="color:var(--at);font-weight:600">Criar</button></div>
+</div></div>
 
 <div class="sheet" id="sheet"><div class="spn">
   <div class="grip"></div>
@@ -3049,7 +3133,10 @@ const I={
  ff:'<path d="M13 6v12l8.5-6z" fill="currentColor" stroke="none"/><path d="M3 6v12l8.5-6z" fill="currentColor" stroke="none"/>',
  pause:'<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
  vol:'<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor" stroke="none"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
- full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'
+ full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+ shuf:'<path d="M3 7h3c4 0 5 10 9 10h5M3 17h3c1.4 0 2.5-1.1 3.4-2.4M14.6 9.4C15.5 8.1 16.6 7 18 7h2"/><path d="m18 4 3 3-3 3M18 14l3 3-3 3"/>',
+ rep:'<path d="M4 11V9a3 3 0 0 1 3-3h12"/><path d="m16 3 3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5"/><path d="m8 21-3-3 3-3"/>',
+ rep1:'<path d="M4 11V9a3 3 0 0 1 3-3h12"/><path d="m16 3 3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5"/><path d="m8 21-3-3 3-3"/><path d="M11 10.5l1.4-1v5.5"/>'
 };
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${I[n]}</svg>`;
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
@@ -3312,7 +3399,7 @@ function updbars(){
  $('#libbar').hidden=off||rep||!SEL.size;
  $('#bsa').hidden=!selTudo().some(r=>!SEL.has(r));
  const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=SEL.size-nP;
- $('#bedit').hidden=SEL.size!==1||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
+ $('#bedit').hidden=SEL.size!==1||nP>0;$('#bmv').hidden=!SEL.size||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
  $('#selc').textContent=!SEL.size?'':nP?(nP+(nP>1?' pastas':' pasta')+(nF?' · '+nF+(nF>1?' arquivos':' arquivo'):'')):(SEL.size+(SEL.size>1?' selecionados':' selecionado'));
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
@@ -3332,16 +3419,23 @@ function ordena(arr){
 
 $('#lsort').value=LORD;
 $('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('wf_ord',LORD)}catch(e){}if(/^d/.test(LORD)&&!LIB.durok)await loadLib();else dlib()};
+const nz=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const ehVid=r=>/\.(mp4|mkv)$/i.test(r);
 function dlib(){
  $('#wrapvid').hidden=!(ACTIVE_PL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
- const f=$('#lf').value.trim().toLowerCase();
- const fv=$('#lfv').value.trim().toLowerCase();
+ const f=nz($('#lf').value.trim());
+ const fv=nz($('#lfv').value.trim());
  
- const ITP=ACTIVE_PL?ordena(ACTIVE_PL.itens):[];
+ const ITP=ACTIVE_PL?ordena(ACTIVE_PL.itens).filter(x=>!f||nz(x.nome).includes(f)):[];
  let mus = ordena(LIB.musicas || []);
- if(f) mus = mus.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(f));
+ if(f) mus = mus.filter(x=>nz(x.nome+' '+x.pasta).includes(f));
  
  let pls = LIB.playlists || [];
+ let dentro = [];
+ if(f&&!ACTIVE_PL){
+  dentro = ordena(pls.filter(p=>!nz(p.nome).includes(f)).flatMap(p=>(p.itens||[]).filter(x=>!ehVid(x.rel)&&nz(x.nome).includes(f))));
+  pls = pls.filter(p=>nz(p.nome).includes(f));
+ }
  let hPls = '';
  if(ACTIVE_PL){
   hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div>` +
@@ -3353,15 +3447,17 @@ function dlib(){
  } else {
   hPls = pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
   if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
-  LIBQ=mus.map(x=>x.rel);
-  hPls += mus.slice(0,LIBN).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`).join('');
+  LIBQ=mus.concat(dentro).map(x=>x.rel);
+  const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
+  hPls += mus.slice(0,LIBN).map(linha).join('');
+  if(dentro.length) hPls += `<div class="lh"><span>Dentro das playlists</span></div>` + dentro.slice(0,LIBN).map(x=>linha(Object.assign({},x,{nome:x.nome+' · '+x.pasta}))).join('');
  }
- const totalLib = ACTIVE_PL ? LIBQ.length : mus.length;
+ const totalLib = ACTIVE_PL ? LIBQ.length : Math.max(mus.length,dentro.length);
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
- $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">Baixe uma música na aba Baixar e ela aparece aqui.</p></div>`;
+ $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':'Baixe uma música na aba Baixar e ela aparece aqui.'}</p></div>`;
 
  let vids = ordena(LIB.videos || []);
- if(fv) vids = vids.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(fv));
+ if(fv) vids = vids.filter(x=>nz(x.nome+' '+x.pasta).includes(fv));
  LIBQV=vids.map(x=>x.rel);
  $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p><p class="sm">Vídeos baixados em MP4 aparecem aqui.</p></div>`;
  if(vids.length>LIBNV) $('#libv').insertAdjacentHTML('beforeend',`<div id="libvmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBNV} de ${vids.length} · role para ver mais</div>`);
@@ -3397,12 +3493,41 @@ $$('#segm button').forEach(b=>b.onclick=()=>{
 
 let CUR='';
 let QUEUE=[];
+let MODO='normal',ALEA=false,HIST=[],TOCADAS=new Set(),REP1=false,ANT='';
+try{const m=localStorage.getItem('wf_modo');if(['normal','um','sempre','lista','tudo'].includes(m))MODO=m;ALEA=localStorage.getItem('wf_alea')==='1'}catch(e){}
 let ST_STOP=false;
 let VOL=0.9;try{const v=parseFloat(localStorage.getItem('wf_vol'));if(v>=0&&v<=1)VOL=v}catch(e){}
 const MA=()=>$('#au');
 const tf=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+':'+p2(m)+':'+p2(x):p2(m)+':'+p2(x)};
 function marcarNow(){$$('#lib .lr,#libv .lr').forEach(r=>{const b=r.querySelector('[data-playrel]');r.classList.toggle('now',!!b&&!!CUR&&b.dataset.playrel===CUR)})}
-function proxima(d){const i=QUEUE.indexOf(CUR),n=i<0?null:QUEUE[i+d];if(n)tocar(n);else if(d>0)stopPlayer()}
+const todasRels=()=>[...(LIB.musicas||[]),...(LIB.playlists||[]).flatMap(p=>p.itens||[])].map(x=>x.rel).filter(r=>!ehVid(r));
+function proxima(d){
+ if(ALEA)return proxAlea(d);
+ const i=QUEUE.indexOf(CUR);let n=i<0?null:QUEUE[i+d];
+ if(!n&&i>=0&&d>0){if(MODO==='lista'&&QUEUE.length)n=QUEUE[0];else if(MODO==='tudo'){QUEUE=todasRels();n=QUEUE[0]}}
+ else if(!n&&i===0&&d<0&&MODO==='lista')n=QUEUE[QUEUE.length-1];
+ if(n)tocar(n);else if(d>0)stopPlayer()}
+function proxAlea(d){
+ if(d<0){if(HIST.length>1){HIST.pop();const p=HIST.pop();tocar(p)}else{const a=MA();if(a)a.currentTime=0}return}
+ let pool=QUEUE.filter(r=>!TOCADAS.has(r));
+ if(!pool.length&&(MODO==='lista'||MODO==='tudo')){if(MODO==='tudo')QUEUE=todasRels();TOCADAS=new Set([CUR]);pool=QUEUE.filter(r=>r!==CUR)}
+ if(!pool.length){if(QUEUE.length===1&&MODO!=='normal')tocar(QUEUE[0]);else stopPlayer();return}
+ tocar(pool[Math.floor(Math.random()*pool.length)])}
+/* Fim da música: aplica o modo de repetição */
+function fimMusica(){const a=MA();
+ if(a&&MODO==='sempre'){a.currentTime=0;const r=a.play();if(r&&r.catch)r.catch(()=>{});return}
+ if(a&&MODO==='um'&&!REP1){REP1=true;a.currentTime=0;const r=a.play();if(r&&r.catch)r.catch(()=>{});return}
+ if(MODO==='um'&&REP1){MODO='normal';REP1=false;salvaModo();pintaModo(false)}
+ proxima(1)}
+const MODOS=['normal','um','sempre','lista','tudo'],MODOT={normal:'Sem repetição',um:'Repetir 1 vez',sempre:'Repetir sempre',lista:'Repetir playlist',tudo:'Repetir tudo'};
+function salvaModo(){try{localStorage.setItem('wf_modo',MODO);localStorage.setItem('wf_alea',ALEA?'1':'0')}catch(e){}}
+function pintaModo(avisa){
+ $('#brepm').innerHTML=ic(MODO==='um'?'rep1':'rep');$('#brepm').classList.toggle('on',MODO!=='normal');
+ $('#bshuf').classList.toggle('on',ALEA);
+ const t=[];if(MODO!=='normal')t.push(MODOT[MODO]);if(ALEA)t.push('Aleatório');
+ const l=$('#modolbl');l.hidden=!t.length;l.textContent=t.join(' · ');
+ if(avisa)toast(t.length?t.join(' · '):'Sem repetição')}
+
 function hsl2rgb(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};return[f(0),f(8),f(4)]}
 function plCor(im){try{const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.drawImage(im,0,0,16,16);const d=x.getImageData(0,0,16,16).data;let r=0,g=0,b=0,w=0;for(let i=0;i<d.length;i+=4){const R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B),sa=mx?(mx-mn)/mx:0,k=Math.max(.05,.15+sa*sa);r+=R*k;g+=G*k;b+=B*k;w+=k}return[r/w,g/w,b/w]}catch(e){return null}}
 function plTema(c){const r=c[0],g=c[1],b=c[2],m=Math.max(r,g,b,1),mn=Math.min(r,g,b),sat=(m-mn)/m,f=Math.min(3,235/m),a=sat<.1?[235,235,235]:[r*f,g*f,b*f].map(Math.round),p=$('#pl').style;
@@ -3420,8 +3545,9 @@ function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.durat
 function tocar(rel,box){
  const all=[...(LIB.musicas||[]),...(LIB.videos||[]),...(LIB.playlists||[]).flatMap(p=>p.itens)];
  const x=all.find(i=>i.rel===rel);if(!x)return;
- if(box)QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);
+ if(box){QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);TOCADAS=new Set();HIST=[]}
  const vid=/\.(mp4|mkv)$/i.test(rel),url='/api/audio?f='+encodeURIComponent(rel),capa='/api/capa?f='+encodeURIComponent(rel);
+ if(rel!==ANT)REP1=false;ANT=rel;TOCADAS.add(rel);HIST.push(rel);if(HIST.length>300)HIST.shift();
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
@@ -3431,7 +3557,7 @@ function tocar(rel,box){
  else{$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
   (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;a=MA()}
  a.volume=VOL;
- a.onended=()=>proxima(1);a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
+ a.onended=fimMusica;a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
  a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>plState(ST_STOP?'stop':'pause');
  a.ontimeupdate=plTime;a.onloadedmetadata=plTime;a.ondurationchange=plTime;
  if(!reuse)plState('pause');plTime();
@@ -3440,6 +3566,9 @@ function tocar(rel,box){
  marcarNow()}
 const togglePlay=()=>{const a=MA();if(!a)return;if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}else a.pause()};
 $('#plprev').onclick=()=>proxima(-1);$('#plnext').onclick=()=>proxima(1);
+$('#brepm').onclick=()=>{MODO=MODOS[(MODOS.indexOf(MODO)+1)%MODOS.length];REP1=false;salvaModo();pintaModo(true)};
+$('#bshuf').onclick=()=>{ALEA=!ALEA;TOCADAS=new Set(CUR?[CUR]:[]);salvaModo();pintaModo(true)};
+pintaModo(false);
 $('#bplay').onclick=togglePlay;
 $('#brew').onclick=()=>{const a=MA();if(a)a.currentTime=Math.max(0,a.currentTime-10)};
 $('#bff').onclick=()=>{const a=MA();if(a&&isFinite(a.duration))a.currentTime=Math.min(a.duration-0.2,a.currentTime+10)};
@@ -3462,6 +3591,28 @@ function stopPlayer(){
 function stopIf(r){if(CUR&&r.some(x=>x===CUR||(x.startsWith('pasta:')&&CUR.startsWith(x.slice(6)+'/'))))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
+/* Mover / copiar para outra playlist */
+let MVMODO='mover';
+const mvRels=()=>[...SEL].filter(r=>!r.startsWith('pasta:'));
+function mvAbre(){
+ const rels=mvRels();if(!rels.length)return;
+ const atual=ACTIVE_PL?ACTIVE_PL.nome:'';
+ const ds=[{n:'',t:'Soltas (raiz)',c:(LIB.musicas||[]).length}].concat((LIB.playlists||[]).map(p=>({n:p.nome,t:p.nome,c:p.total}))).filter(d=>d.n!==atual);
+ $('#mvt').textContent=rels.length+(rels.length>1?' músicas selecionadas':' música selecionada');
+ $('#mvl').innerHTML=ds.map(d=>`<button class="rb" data-mvd="${esc(d.n)}"><span>${esc(d.t)}</span><span class="r"><small>${d.c} itens</small></span></button>`).join('')||'<p class="sm mut">Nenhuma outra playlist. Crie uma abaixo.</p>';
+ $('#mvnew').value='';segset('mvmodo',MVMODO);$('#mvs').classList.add('on')}
+async function mvFaz(dest){
+ const rels=mvRels(),copiar=MVMODO==='copiar';if(!rels.length)return;
+ try{const r=await api('/api/mover',{rels,destino:dest,copiar});
+  if(!copiar)stopIf(rels);
+  SEL.clear();$('#mvs').classList.remove('on');await loadLib();
+  toast([r.ok+(copiar?' copiadas':' movidas')].concat(r.pulou?[r.pulou+' ignoradas'] :[]).concat(r.falhas&&r.falhas.length?[r.falhas.length+' falhas']:[]).join(' · '))
+ }catch(e){toast(e.message)}}
+$('#bmv').onclick=mvAbre;$('#mvx').onclick=()=>$('#mvs').classList.remove('on');
+$('#mvs').onclick=e=>{if(e.target.id==='mvs')$('#mvs').classList.remove('on')};
+$('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return;MVMODO=b.dataset.v;segset('mvmodo',MVMODO)};
+$('#mvl').onclick=e=>{const b=e.target.closest('[data-mvd]');if(b)mvFaz(b.dataset.mvd)};
+$('#mvgo').onclick=()=>{const n=$('#mvnew').value.trim();if(!n)return toast('Digite o nome da playlist');mvFaz(n)};
 /* Selecionar tudo: dentro de uma pasta, as músicas dela; na tela das pastas, se já há pasta marcada, todas as pastas; senão, as músicas soltas */
 function selTudo(){if(!ACTIVE_PL&&[...SEL].some(r=>r.startsWith('pasta:')))return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
 $('#bsa').onclick=()=>{selTudo().forEach(r=>SEL.add(r));dlib()};
