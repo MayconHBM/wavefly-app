@@ -3917,9 +3917,9 @@ document.addEventListener('input', ()=>setTimeout(salvaTit, 600));
 </script>
 <style>/* TEMA-WAVEFLY-FINAL - visual novo: cores unificadas e botões 3D médios (só aparência) */
 :root{--t-bg:#f4e9d3;--t-s1:#fffaf0;--t-s2:#f0e2c6;--t-ln:#dcc9a3;--t-tx:#34200f;--t-mu:#8b7155;
---t-ac1:#ff9d45;--t-ac2:#e46f22;--t-acd:#a84a12;--t-on:#2b1304;--t-bt1:#fffdf6;--t-bt2:#eadbbb;--t-btd:#bfa57a;--t-bg-ink:#34200f}
+--t-ac1:#C9672A;--t-ac2:#C9672A;--t-acd:#a84a12;--t-on:#2a1206;--t-bt1:#f7ecd6;--t-bt2:#f1e4c8;--t-btd:#bfa57a;--t-bg-ink:#34200f}
 @media(prefers-color-scheme:dark){:root{--t-bg:#17110d;--t-s1:#241b14;--t-s2:#2f231a;--t-ln:#43332a;--t-tx:#f6ead3;--t-mu:#b9a58b;
---t-ac1:#ffa94f;--t-ac2:#e9742a;--t-acd:#8f3d0d;--t-on:#2b1304;--t-bt1:#4a392c;--t-bt2:#33271d;--t-btd:#120c08;--t-bg-ink:#f6ead3}}
+--t-ac1:#C9672A;--t-ac2:#D8742F;--t-acd:#8f3d0d;--t-on:#2a1206;--t-bt1:#2f2219;--t-bt2:#2c1f18;--t-btd:#120c08;--t-bg-ink:#f6ead3}}
 html body{background:var(--t-bg)!important;color:var(--t-tx)!important}
 html body h1,html body h2,html body h3,html body .wm,html body .wm i{text-shadow:none!important}
 html body .wm i{color:var(--t-ac2)!important}
@@ -3928,47 +3928,47 @@ html body .mut,html body .sm,html body .sub,html body p.mut{color:var(--t-mu)!im
 
 /* cartões e listas: borda fina e sombra suave */
 html body .lr,html body .pc,html body .pl-card,html body .rs,html body .tr,html body .chip,html body .plc,html body .deliver,html body #tray,html body .rb,html body .hello,html body .card,html body .cd{
- background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
- box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 3px 10px rgba(0,0,0,.22)!important;color:var(--t-tx)!important}
+ background:linear-gradient(var(--t-s1),var(--t-s1))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.3)!important;color:var(--t-tx)!important}
 html body .hello{border-style:dashed!important}
 
 /* campos */
 html body textarea,html body input[type=text],html body input[type=number],html body input[type=search],html body select{
  background:var(--t-s1)!important;color:var(--t-tx)!important;border:1px solid var(--t-ln)!important;border-radius:14px!important;
- box-shadow:inset 0 2px 5px rgba(0,0,0,.25)!important}
+ box-shadow:none!important}
 html body textarea:focus,html body input[type=text]:focus,html body input[type=number]:focus,html body input[type=search]:focus{
- border-color:var(--t-ac1)!important;box-shadow:inset 0 2px 5px rgba(0,0,0,.25),0 0 0 3px rgba(255,157,69,.22)!important;outline:none!important}
+ border-color:var(--t-ac1)!important;box-shadow:0 0 0 3px rgba(201,103,42,.28)!important;outline:none!important}
 
 /* botões 3D médios: gradiente, brilho no topo e borda inferior em relevo */
 html body button,html body .sg button,html body .sg a,html body #bpaste,html body #bclr,html body #fbar button,html body #brep,html body .sbar button,html body .sel button,html body #fbl button,html body .srch>button{
- background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-tx)!important;
- border:1px solid rgba(255,255,255,.10)!important;text-shadow:none!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 3px 0 var(--t-btd),0 6px 9px rgba(0,0,0,.28)!important;
+ background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-tx)!important;
+ border:1px solid var(--t-ln)!important;text-shadow:none!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;
  transition:transform .08s ease,box-shadow .08s ease!important}
 html body button:active,html body .sg button:active,html body .sg a:active,html body .tabs a:active{
- transform:translateY(2px)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 1px 0 var(--t-btd),0 2px 4px rgba(0,0,0,.25)!important}
+ transform:translateY(1px)!important;box-shadow:none!important}
 html body button.t,html body button.more{background:transparent!important;box-shadow:none!important;border-color:transparent!important;color:var(--t-ac2)!important}
 html body button.t:active{transform:none!important}
 
 /* botão principal e item selecionado: laranja */
 html body button.p,html body #bgo,html body .sg button.on,html body .sg a.on,html body .tabs a.on{
- background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;
- border:1px solid rgba(255,255,255,.28)!important;text-shadow:0 1px 0 rgba(255,255,255,.25)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+ background:linear-gradient(var(--t-ac1),var(--t-ac1))!important;color:var(--t-on)!important;
+ border:1px solid rgba(0,0,0,.18)!important;text-shadow:none!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.4)!important}
 html body .tabs a.on svg,html body .tabs a.on span{color:var(--t-on)!important}
 
 /* abas */
-html body .tabs{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
-html body .tabs a{background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;border:1px solid rgba(255,255,255,.08)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd)!important;text-shadow:none!important}
+html body .tabs{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:none!important}
+html body .tabs a{background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-mu)!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;text-shadow:none!important}
 
 /* barras de progresso */
-html body .bar{background:var(--t-s2)!important;box-shadow:inset 0 1px 3px rgba(0,0,0,.4)!important}
-html body .bar i{background:linear-gradient(90deg,var(--t-ac1),var(--t-ac2))!important}
+html body .bar{background:var(--t-s2)!important;box-shadow:none!important}
+html body .bar i{background:linear-gradient(var(--t-ac1),var(--t-ac1))!important}
 
 /* player */
-html body #pl{background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;background-image:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
- box-shadow:0 10px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)!important;color:var(--t-tx)!important}
+html body #pl{background:linear-gradient(var(--t-s1),var(--t-s1))!important;background-image:linear-gradient(var(--t-s1),var(--t-s1))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 6px 18px rgba(0,0,0,.4)!important;color:var(--t-tx)!important}
 html body #pl *{color:var(--t-tx)}
 html body #bvol,html body #vrow{display:none!important}
 html body #moldura{display:none!important}
@@ -3996,13 +3996,13 @@ html body.pcc .lr.now{background:var(--npb)!important}
 html,body{-webkit-tap-highlight-color:transparent}
 html body::after{display:none!important}
 html body .tabs a,html body .tabs a:nth-child(2),html body .tabs a[data-go],html body .tabs a[href*="buscar"]{
- border:1px solid rgba(255,255,255,.10)!important;background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd),0 5px 8px rgba(0,0,0,.22)!important;transform:none!important}
+ border:1px solid var(--t-ln)!important;background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-mu)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;transform:none!important}
 html body .tabs a.on,html body .tabs a:nth-child(2).on,html body .tabs a[data-go].on,html body .tabs a[href*="buscar"].on{
- background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;border:1px solid rgba(255,255,255,.28)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+ background:linear-gradient(var(--t-ac1),var(--t-ac1))!important;color:var(--t-on)!important;border:1px solid rgba(0,0,0,.18)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.4)!important}
 html body .tabs{padding:6px!important}
-html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
+html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:none!important}
 </style>
 </body></html>
 '''
