@@ -3044,7 +3044,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 
 <section class="v" id="v-musicas" hidden>
   <div class="row" style="margin-top:14px">
-    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="videos">Vídeos</button></div>
+    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="pls">Playlists</button><button data-v="videos">Vídeos</button></div>
     <span class="sm mut" id="libinfo"></span>
   </div>
   <div id="m-todas" style="margin-top:12px"><input type="text" id="lf" placeholder="Filtrar músicas..."><select id="lsort" aria-label="Ordenar" style="margin-top:8px;width:100%;padding:10px 12px;border-radius:12px;background:var(--sf);color:var(--fg);border:1px solid var(--ln);font:inherit"><option value="pad">Ordem: padrão</option><option value="rec">Mais recentes primeiro</option><option value="ant">Mais antigas primeiro</option><option value="az">Nome A–Z</option><option value="za">Nome Z–A</option><option value="dmax">Mais longas primeiro</option><option value="dmin">Mais curtas primeiro</option><option value="tmax">Maiores primeiro</option><option value="tmin">Menores primeiro</option></select><label id="wrapvid" hidden style="display:flex;gap:8px;align-items:center;margin:6px 0 10px;cursor:pointer;font-size:14px"><input type="checkbox" id="chkvid" style="width:18px;height:18px"> Mostrar vídeos <span class="sm mut">(prioriza músicas)</span></label><div id="lib"></div></div>
@@ -3401,6 +3401,8 @@ function updbars(){
 function nrep(){return RG.reduce((a,g)=>a+g.arquivos.filter(x=>x.marcada).length,0)}
 
 let ACTIVE_PL = null;
+let LIBVIEW = 'todas';   /* tela da biblioteca: todas (músicas soltas) | pls (playlists) */
+let LIBPLS = [];
 let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro')==='1'}catch(e){}
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
 
@@ -3417,37 +3419,35 @@ $('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('
 const nz=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const ehVid=r=>/\.(mp4|mkv)$/i.test(r);
 function dlib(){
- $('#wrapvid').hidden=!(ACTIVE_PL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
+ const emPL=!!(LIBVIEW==='pls'&&ACTIVE_PL);
+ $('#wrapvid').hidden=!(emPL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
  const f=nz($('#lf').value.trim());
  const fv=nz($('#lfv').value.trim());
  
- const ITP=ACTIVE_PL?ordena(ACTIVE_PL.itens).filter(x=>!f||nz(x.nome).includes(f)):[];
+ const ITP=emPL?ordena(ACTIVE_PL.itens).filter(x=>!f||nz(x.nome).includes(f)):[];
  let mus = ordena(LIB.musicas || []);
  if(f) mus = mus.filter(x=>nz(x.nome+' '+x.pasta).includes(f));
  
  let pls = LIB.playlists || [];
- let dentro = [];
- if(f&&!ACTIVE_PL){
-  dentro = ordena(pls.filter(p=>!nz(p.nome).includes(f)).flatMap(p=>(p.itens||[]).filter(x=>!ehVid(x.rel)&&nz(x.nome).includes(f))));
-  pls = pls.filter(p=>nz(p.nome).includes(f));
- }
+ if(f&&LIBVIEW==='pls'&&!emPL) pls = pls.filter(p=>nz(p.nome).includes(f)||(p.itens||[]).some(x=>!ehVid(x.rel)&&nz(x.nome).includes(f)));
  let hPls = '';
- if(ACTIVE_PL){
-  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow"><button data-shuf="lista">Playlist em aleatório</button></div>` +
+ const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
+ if(emPL){
+  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow"><button data-shuf="lista">Tocar em aleatório</button></div>` +
    (LIBQ=(PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
     (PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
+ } else if(LIBVIEW==='pls'){
+  LIBQ=[];
+  LIBPLS=pls.flatMap(p=>nz(p.nome).includes(f)?(p.itens||[]):(p.itens||[]).filter(x=>nz(x.nome).includes(f))).map(x=>x.rel).filter(r=>!ehVid(r));
+  hPls = (pls.length?`<div class="shufrow"><button data-shuf="pls">Tocar todas em aleatório</button></div>`:'') + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
  } else {
-  hPls = ((mus.length||pls.length)?`<div class="shufrow">${mus.length?'<button data-shuf="soltas">Soltas em aleatório</button>':''}<button data-shuf="tudo">Tudo em aleatório</button></div>`:'') + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
-  if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
-  LIBQ=mus.concat(dentro).map(x=>x.rel);LIBSOLTAS=mus.map(x=>x.rel);
-  const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
-  hPls += mus.slice(0,LIBN).map(linha).join('');
-  if(dentro.length) hPls += `<div class="lh"><span>Dentro das playlists</span></div>` + dentro.slice(0,LIBN).map(x=>linha(Object.assign({},x,{nome:x.nome+' · '+x.pasta}))).join('');
+  LIBQ=mus.map(x=>x.rel);LIBSOLTAS=LIBQ.slice();
+  hPls = (mus.length?`<div class="shufrow"><button data-shuf="soltas">Tocar em aleatório</button></div>`:'') + mus.slice(0,LIBN).map(linha).join('');
  }
- const totalLib = ACTIVE_PL ? LIBQ.length : Math.max(mus.length,dentro.length);
+ const totalLib = emPL ? LIBQ.length : (LIBVIEW==='pls'?0:mus.length);
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
  $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':'Baixe uma música na aba Baixar e ela aparece aqui.'}</p></div>`;
 
@@ -3482,7 +3482,8 @@ document.addEventListener('click',e=>{
 
 $$('#segm button').forEach(b=>b.onclick=()=>{
  segset('segm',b.dataset.v);
- $('#m-todas').hidden=b.dataset.v!=='todas';
+ if(b.dataset.v==='todas'||b.dataset.v==='pls'){LIBVIEW=b.dataset.v;LIBN=60;SEL.clear();dlib()}
+ $('#m-todas').hidden=!(b.dataset.v==='todas'||b.dataset.v==='pls');
  $('#m-videos').hidden=b.dataset.v!=='videos';
  $('#m-rep').hidden=b.dataset.v!=='rep';
  updbars();
@@ -3498,10 +3499,7 @@ function marcarNow(){$$('#lib .lr,#libv .lr').forEach(r=>{const b=r.querySelecto
 const todasRels=()=>[...(LIB.musicas||[]),...(LIB.playlists||[]).flatMap(p=>p.itens||[])].map(x=>x.rel).filter(r=>!ehVid(r));
 /* Tocar em ordem aleatória: embaralha a fila uma vez; anterior/próxima seguem a ordem sorteada e a fila termina no fim */
 function aleatorio(modo){
- let rels;
- if(ACTIVE_PL)rels=LIBQ.slice();
- else if(modo==='soltas')rels=LIBSOLTAS.slice();
- else rels=($('#lf').value.trim()?LIBQ.slice():todasRels());
+ let rels=modo==='pls'?LIBPLS.slice():modo==='soltas'?LIBSOLTAS.slice():LIBQ.slice();
  rels=rels.filter(r=>!ehVid(r));
  if(!rels.length)return toast('Nenhuma música para tocar');
  for(let i=rels.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[rels[i],rels[j]]=[rels[j],rels[i]]}
@@ -3571,7 +3569,7 @@ let MVMODO='mover';
 const mvRels=()=>[...SEL].filter(r=>!r.startsWith('pasta:'));
 function mvAbre(){
  const rels=mvRels();if(!rels.length)return;
- const atual=ACTIVE_PL?ACTIVE_PL.nome:'';
+ const atual=LIBVIEW==='pls'&&ACTIVE_PL?ACTIVE_PL.nome:'';
  const ds=[{n:'',t:'Soltas (raiz)',c:(LIB.musicas||[]).length}].concat((LIB.playlists||[]).map(p=>({n:p.nome,t:p.nome,c:p.total}))).filter(d=>d.n!==atual);
  $('#mvt').textContent=rels.length+(rels.length>1?' músicas selecionadas':' música selecionada');
  $('#mvl').innerHTML=ds.map(d=>`<button class="rb" data-mvd="${esc(d.n)}"><span>${esc(d.t)}</span><span class="r"><small>${d.c} itens</small></span></button>`).join('')||'<p class="sm mut">Nenhuma outra playlist. Crie uma abaixo.</p>';
@@ -3589,7 +3587,7 @@ $('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return
 $('#mvl').onclick=e=>{const b=e.target.closest('[data-mvd]');if(b)mvFaz(b.dataset.mvd)};
 $('#mvgo').onclick=()=>{const n=$('#mvnew').value.trim();if(!n)return toast('Digite o nome da playlist');mvFaz(n)};
 /* Selecionar tudo: dentro de uma pasta, as músicas dela; na tela das pastas, se já há pasta marcada, todas as pastas; senão, as músicas soltas */
-function selTudo(){if(!ACTIVE_PL&&[...SEL].some(r=>r.startsWith('pasta:')))return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
+function selTudo(){if(LIBVIEW==='pls'&&!ACTIVE_PL)return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
 $('#bsa').onclick=()=>{selTudo().forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=n-nP;
  const msg=(nP?`Apagar <b>${nP}</b> ${nP>1?'pastas inteiras':'pasta inteira'}, com todos os arquivos dentro?`+(nF?'<br>':''):'')+(nF?`Apagar <b>${nF}</b> arquivo${nF>1?'s':''} do aparelho?`:'');
