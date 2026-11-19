@@ -2095,9 +2095,7 @@ def lista_biblioteca(com_dur=False):
     return out
 
 
-def mover_copiar(rels, destino, copiar=False):
-    """Move (ou copia) músicas para outra playlist (pasta). destino "" = raiz. Cria a pasta se não existir.
-    Leva junto a imagem de capa ao lado. Nome repetido no destino vira "nome (2)". Devolve {ok, pulou, falhas}."""
+def _dir_destino(destino, criar):
     destino = (destino or "").strip().strip("/\\")
     if any(c in destino for c in '\\:*?"<>|') or ".." in destino.split("/"):
         raise ValueError("Nome de playlist inválido")
@@ -2105,7 +2103,34 @@ def mover_copiar(rels, destino, copiar=False):
     dest = os.path.realpath(os.path.join(r, destino)) if destino else r
     if dest != r and not dest.startswith(r + os.sep):
         raise ValueError("Destino inválido")
-    os.makedirs(dest, exist_ok=True)
+    if criar:
+        os.makedirs(dest, exist_ok=True)
+    return dest
+
+
+def conflitos_mover(rels, destino):
+    """Músicas que já existem (mesmo nome) na playlist de destino, para o app perguntar o que fazer."""
+    dest = _dir_destino(destino, False)
+    out = []
+    for rel in rels or []:
+        if not isinstance(rel, str) or rel.startswith("pasta:"):
+            continue
+        p = caminho_seguro(rel)
+        if not p or not os.path.isfile(p) or not p.lower().endswith(EXTS) or os.path.dirname(p) == dest:
+            continue
+        alvo = os.path.join(dest, os.path.basename(p))
+        if os.path.isfile(alvo):
+            a, b = os.stat(p), os.stat(alvo)
+            out.append({"rel": rel, "nome": os.path.basename(p),
+                        "o": {"tam": a.st_size, "mt": int(a.st_mtime)}, "d": {"tam": b.st_size, "mt": int(b.st_mtime)}})
+    return {"conflitos": out}
+
+
+def mover_copiar(rels, destino, copiar=False, decisoes=None):
+    """Move (ou copia) músicas para outra playlist (pasta). destino "" = raiz. Cria a pasta se não existir.
+    Leva junto a imagem de capa ao lado. Nome repetido no destino vira "nome (2)". Devolve {ok, pulou, falhas}."""
+    dest = _dir_destino(destino, True)
+    decisoes = decisoes or {}
     ok = pulou = 0
     falhas = []
     NOMES["k"] = None
@@ -2121,9 +2146,15 @@ def mover_copiar(rels, destino, copiar=False):
             continue
         base, ext = os.path.splitext(os.path.basename(p))
         nome, n = base, 2
-        while os.path.exists(os.path.join(dest, nome + ext)):
-            nome = "%s (%d)" % (base, n)
-            n += 1
+        if os.path.exists(os.path.join(dest, base + ext)):
+            acao = decisoes.get(rel, "duas")
+            if acao == "pular":
+                pulou += 1
+                continue
+            if acao != "substituir":            # "duas": mantém as duas, a nova ganha " (2)"
+                while os.path.exists(os.path.join(dest, nome + ext)):
+                    nome = "%s (%d)" % (base, n)
+                    n += 1
         alvo = os.path.join(dest, nome + ext)
         try:
             if copiar:
@@ -2544,8 +2575,11 @@ class H(BaseHTTPRequestHandler):
                 return self._json(aplicar_cfg(d))
             if p == "/api/apagar":
                 return self._json(apagar(d.get("rels") or []))
+            if p == "/api/mover_checar":
+                return self._json(conflitos_mover(d.get("rels") or [], d.get("destino", "")))
             if p == "/api/mover":
-                return self._json(mover_copiar(d.get("rels") or [], d.get("destino", ""), bool(d.get("copiar"))))
+                return self._json(mover_copiar(d.get("rels") or [], d.get("destino", ""), bool(d.get("copiar")),
+                                               d.get("decisoes") if isinstance(d.get("decisoes"), dict) else None))
             if p == "/api/converter":
                 return self._json(converter_mp3(d.get("rels") or []))
             if p == "/api/etiqueta":
@@ -2733,7 +2767,8 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--sf2);padding:1px 
 .cv{width:46px;height:46px}.cv.lg{width:56px;height:56px;border-radius:12px}
 .lr{border-radius:12px;padding:6px 8px;margin:0 -8px;transition:background .15s}.lr.now{background:var(--acs)}
 .lr .cv{box-shadow:0 1px 2px rgb(0 0 0 / .12)}
-.shufrow{display:flex;gap:8px;margin:12px 0 10px}.shufrow button{flex:1;padding:10px 8px;font-size:13.5px}
+.shufrow{display:flex;gap:8px;margin:12px 0 10px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:8px;background:rgba(127,110,90,.25);color:var(--mu,#b9a58b);margin-left:4px}.tag.g{background:rgba(130,160,80,.22);color:#b0ba84}.shufrow button{flex:1;padding:10px 8px;font-size:13.5px}
 /*skin-organico*/
 *{scrollbar-width:thin;scrollbar-color:var(--sf2) transparent}
 :root{--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;--paper:#fbf8ef}
@@ -3088,6 +3123,19 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div class="sg full" id="mvmodo" style="margin:10px 0"><button data-v="mover" class="on">Mover</button><button data-v="copiar">Copiar</button></div>
   <div id="mvl"></div>
   <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="mvnew" placeholder="Nova playlist…" maxlength="80" style="flex:1"><button class="t" id="mvgo" style="color:var(--at);font-weight:600">Criar</button></div>
+</div></div>
+
+<div class="sheet" id="mvc"><div class="spn">
+  <div class="grip"></div>
+  <b id="mcT" style="font-size:18px;display:block">Já existe na playlist</b>
+  <div id="mcN" class="sm" style="margin:6px 0 10px;word-break:break-word;color:var(--fg)"></div>
+  <div class="sm mut" style="margin-bottom:4px">novo · já existente</div>
+  <div class="row"><span class="sm mut">Tamanho</span><span id="mcS" class="sm"></span></div>
+  <div class="row"><span class="sm mut">Data</span><span id="mcD" class="sm"></span></div>
+  <label id="mcAllW" style="display:flex;gap:10px;align-items:center;margin:12px 0 4px;font-size:14px;cursor:pointer"><input type="checkbox" id="mcAll" style="width:18px;height:18px"><span id="mcAllT"></span></label>
+  <div style="display:flex;gap:8px;margin-top:10px"><button id="mcP" style="flex:1">Pular</button><button id="mcB" style="flex:1">Manter as duas</button></div>
+  <button id="mcR" class="p" style="width:100%;margin-top:8px">Substituir</button>
+  <button id="mcX" class="t" style="width:100%;margin-top:6px">Cancelar tudo</button>
 </div></div>
 
 <div class="sheet" id="sheet"><div class="spn">
@@ -3574,9 +3622,29 @@ function mvAbre(){
  $('#mvt').textContent=rels.length+(rels.length>1?' músicas selecionadas':' música selecionada');
  $('#mvl').innerHTML=ds.map(d=>`<button class="rb" data-mvd="${esc(d.n)}"><span>${esc(d.t)}</span><span class="r"><small>${d.c} itens</small></span></button>`).join('')||'<p class="sm mut">Nenhuma outra playlist. Crie uma abaixo.</p>';
  $('#mvnew').value='';segset('mvmodo',MVMODO);$('#mvs').classList.add('on')}
+const dtf=t=>{const d=new Date(t*1000);return p2(d.getDate())+'/'+p2(d.getMonth()+1)+' '+p2(d.getHours())+':'+p2(d.getMinutes())};
+/* Música repetida no destino: pergunta (pular / manter as duas / substituir), com "fazer o mesmo com os próximos" */
+function mvPergunta(cs,dest){return new Promise(res=>{
+ const dec={};let i=0;
+ const tag=(ok,a,b)=>esc(a)+' · '+esc(b)+` <span class="tag ${ok?'g':''}">${ok?'igual':'diferente'}</span>`;
+ const mostra=()=>{const c=cs[i],resto=cs.length-i-1;
+  $('#mcT').textContent=dest?`Já existe em "${dest}"`:'Já existe nas Soltas';
+  $('#mcN').textContent=c.nome;
+  $('#mcS').innerHTML=tag(c.o.tam===c.d.tam,tamf(c.o.tam),tamf(c.d.tam));
+  $('#mcD').innerHTML=tag(Math.abs(c.o.mt-c.d.mt)<2,dtf(c.o.mt),dtf(c.d.mt));
+  $('#mcAllW').hidden=!resto;$('#mcAll').checked=false;$('#mcAllT').textContent=`Fazer o mesmo com os próximos (${resto})`};
+ const fim=ok=>{$('#mvc').classList.remove('on');res(ok?dec:null)};
+ const escolhe=a=>{dec[cs[i].rel]=a;
+  if($('#mcAll').checked&&cs.length-i-1>0){for(let k=i+1;k<cs.length;k++)dec[cs[k].rel]=a;return fim(true)}
+  i++;if(i>=cs.length)return fim(true);mostra()};
+ $('#mcP').onclick=()=>escolhe('pular');$('#mcB').onclick=()=>escolhe('duas');$('#mcR').onclick=()=>escolhe('substituir');$('#mcX').onclick=()=>fim(false);
+ mostra();$('#mvs').classList.remove('on');$('#mvc').classList.add('on')})}
 async function mvFaz(dest){
  const rels=mvRels(),copiar=MVMODO==='copiar';if(!rels.length)return;
- try{const r=await api('/api/mover',{rels,destino:dest,copiar});
+ try{const ck=await api('/api/mover_checar',{rels,destino:dest});
+  let dec={};
+  if(ck.conflitos&&ck.conflitos.length){dec=await mvPergunta(ck.conflitos,dest);if(!dec)return}
+  const r=await api('/api/mover',{rels,destino:dest,copiar,decisoes:dec});
   if(!copiar)stopIf(rels);
   SEL.clear();$('#mvs').classList.remove('on');await loadLib();
   toast([r.ok+(copiar?' copiadas':' movidas')].concat(r.pulou?[r.pulou+' ignoradas'] :[]).concat(r.falhas&&r.falhas.length?[r.falhas.length+' falhas']:[]).join(' · '))
