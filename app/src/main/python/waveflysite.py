@@ -2733,6 +2733,7 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--sf2);padding:1px 
 .cv{width:46px;height:46px}.cv.lg{width:56px;height:56px;border-radius:12px}
 .lr{border-radius:12px;padding:6px 8px;margin:0 -8px;transition:background .15s}.lr.now{background:var(--acs)}
 .lr .cv{box-shadow:0 1px 2px rgb(0 0 0 / .12)}
+.shufrow{display:flex;gap:8px;margin:12px 0 10px}.shufrow button{flex:1;padding:10px 8px;font-size:13.5px}
 /*skin-organico*/
 *{scrollbar-width:thin;scrollbar-color:var(--sf2) transparent}
 :root{--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;--paper:#fbf8ef}
@@ -2829,7 +2830,6 @@ body.pon{padding-bottom:calc(var(--plh,150px) + 40px + env(safe-area-inset-botto
 .rb2 svg.i{width:46%;height:46%}
 .rb2.big{flex:1.25;max-width:58px;background:#c8581f;color:#f6e7c8;border-width:3px;box-shadow:0 3px 8px rgb(80 30 5 / .4)}
 .rb2.sp{border-color:transparent}
-.rb2.on{background:#c8581f;color:#f6e7c8;border-color:#c8581f}
 .rb2:active,.rb4:active{transform:scale(.93)}
 .vrow{margin-top:10px}
 #vol{display:block;width:100%;height:22px;padding:0;border:0;background:transparent;-webkit-appearance:none;appearance:none}
@@ -3078,8 +3078,6 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
     <button class="rb2" id="bff" aria-label="Avançar 10 segundos" data-i="ff"></button>
     <button class="rb2" id="plnext" aria-label="Próxima" data-i="next"></button>
   </div>
-  <div class="btns" id="btns2" style="margin-top:8px;justify-content:center;gap:22px"><button class="rb2" id="bshuf" aria-label="Aleatório" data-i="shuf"></button><button class="rb2" id="brepm" aria-label="Repetir" data-i="rep"></button></div>
-  <div class="sm mut" id="modolbl" style="text-align:center;margin-top:4px" hidden></div>
   <div class="vrow" id="vrow" hidden><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"></div>
   <div id="pl-audio" hidden></div>
 </div>
@@ -3133,10 +3131,7 @@ const I={
  ff:'<path d="M13 6v12l8.5-6z" fill="currentColor" stroke="none"/><path d="M3 6v12l8.5-6z" fill="currentColor" stroke="none"/>',
  pause:'<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
  vol:'<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor" stroke="none"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
- full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
- shuf:'<path d="M3 7h3c4 0 5 10 9 10h5M3 17h3c1.4 0 2.5-1.1 3.4-2.4M14.6 9.4C15.5 8.1 16.6 7 18 7h2"/><path d="m18 4 3 3-3 3M18 14l3 3-3 3"/>',
- rep:'<path d="M4 11V9a3 3 0 0 1 3-3h12"/><path d="m16 3 3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5"/><path d="m8 21-3-3 3-3"/>',
- rep1:'<path d="M4 11V9a3 3 0 0 1 3-3h12"/><path d="m16 3 3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5"/><path d="m8 21-3-3 3-3"/><path d="M11 10.5l1.4-1v5.5"/>'
+ full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'
 };
 const ic=(n,s)=>`<svg class="i" viewBox="0 0 24 24"${s?` style="width:${s}px;height:${s}px"`:''}>${I[n]}</svg>`;
 $$('[data-i]').forEach(e=>e.innerHTML=ic(e.dataset.i));
@@ -3409,7 +3404,7 @@ let ACTIVE_PL = null;
 let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro')==='1'}catch(e){}
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
 
-let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBIO=null;
+let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBSOLTAS=[],LIBIO=null;
 let LORD='pad';try{LORD=localStorage.getItem('wf_ord')||'pad'}catch(e){}
 const CAPAV={v:0};
 function ordena(arr){
@@ -3438,16 +3433,16 @@ function dlib(){
  }
  let hPls = '';
  if(ACTIVE_PL){
-  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div>` +
+  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow"><button data-shuf="lista">Playlist em aleatório</button></div>` +
    (LIBQ=(PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
     (PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
  } else {
-  hPls = pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
+  hPls = ((mus.length||pls.length)?`<div class="shufrow">${mus.length?'<button data-shuf="soltas">Soltas em aleatório</button>':''}<button data-shuf="tudo">Tudo em aleatório</button></div>`:'') + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
   if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
-  LIBQ=mus.concat(dentro).map(x=>x.rel);
+  LIBQ=mus.concat(dentro).map(x=>x.rel);LIBSOLTAS=mus.map(x=>x.rel);
   const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
   hPls += mus.slice(0,LIBN).map(linha).join('');
   if(dentro.length) hPls += `<div class="lh"><span>Dentro das playlists</span></div>` + dentro.slice(0,LIBN).map(x=>linha(Object.assign({},x,{nome:x.nome+' · '+x.pasta}))).join('');
@@ -3475,6 +3470,8 @@ document.addEventListener('click',e=>{
   const opp=e.target.closest('[data-oppl]');
  if(opp){const nome=opp.dataset.oppl;ACTIVE_PL=LIB.playlists.find(p=>p.nome===nome)||null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
  if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
+ const sh=e.target.closest('[data-shuf]');
+ if(sh){aleatorio(sh.dataset.shuf);return}
  const pr=e.target.closest('[data-playrel]');
  if(pr){tocar(pr.dataset.playrel,pr.closest('#lib,#libv'));return}
  const cp=e.target.closest('input[data-pasta]');
@@ -3493,41 +3490,23 @@ $$('#segm button').forEach(b=>b.onclick=()=>{
 
 let CUR='';
 let QUEUE=[];
-let MODO='normal',ALEA=false,HIST=[],TOCADAS=new Set(),REP1=false,ANT='';
-try{const m=localStorage.getItem('wf_modo');if(['normal','um','sempre','lista','tudo'].includes(m))MODO=m;ALEA=localStorage.getItem('wf_alea')==='1'}catch(e){}
 let ST_STOP=false;
 let VOL=0.9;try{const v=parseFloat(localStorage.getItem('wf_vol'));if(v>=0&&v<=1)VOL=v}catch(e){}
 const MA=()=>$('#au');
 const tf=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+':'+p2(m)+':'+p2(x):p2(m)+':'+p2(x)};
 function marcarNow(){$$('#lib .lr,#libv .lr').forEach(r=>{const b=r.querySelector('[data-playrel]');r.classList.toggle('now',!!b&&!!CUR&&b.dataset.playrel===CUR)})}
 const todasRels=()=>[...(LIB.musicas||[]),...(LIB.playlists||[]).flatMap(p=>p.itens||[])].map(x=>x.rel).filter(r=>!ehVid(r));
-function proxima(d){
- if(ALEA)return proxAlea(d);
- const i=QUEUE.indexOf(CUR);let n=i<0?null:QUEUE[i+d];
- if(!n&&i>=0&&d>0){if(MODO==='lista'&&QUEUE.length)n=QUEUE[0];else if(MODO==='tudo'){QUEUE=todasRels();n=QUEUE[0]}}
- else if(!n&&i===0&&d<0&&MODO==='lista')n=QUEUE[QUEUE.length-1];
- if(n)tocar(n);else if(d>0)stopPlayer()}
-function proxAlea(d){
- if(d<0){if(HIST.length>1){HIST.pop();const p=HIST.pop();tocar(p)}else{const a=MA();if(a)a.currentTime=0}return}
- let pool=QUEUE.filter(r=>!TOCADAS.has(r));
- if(!pool.length&&(MODO==='lista'||MODO==='tudo')){if(MODO==='tudo')QUEUE=todasRels();TOCADAS=new Set([CUR]);pool=QUEUE.filter(r=>r!==CUR)}
- if(!pool.length){if(QUEUE.length===1&&MODO!=='normal')tocar(QUEUE[0]);else stopPlayer();return}
- tocar(pool[Math.floor(Math.random()*pool.length)])}
-/* Fim da música: aplica o modo de repetição */
-function fimMusica(){const a=MA();
- if(a&&MODO==='sempre'){a.currentTime=0;const r=a.play();if(r&&r.catch)r.catch(()=>{});return}
- if(a&&MODO==='um'&&!REP1){REP1=true;a.currentTime=0;const r=a.play();if(r&&r.catch)r.catch(()=>{});return}
- if(MODO==='um'&&REP1){MODO='normal';REP1=false;salvaModo();pintaModo(false)}
- proxima(1)}
-const MODOS=['normal','um','sempre','lista','tudo'],MODOT={normal:'Sem repetição',um:'Repetir 1 vez',sempre:'Repetir sempre',lista:'Repetir playlist',tudo:'Repetir tudo'};
-function salvaModo(){try{localStorage.setItem('wf_modo',MODO);localStorage.setItem('wf_alea',ALEA?'1':'0')}catch(e){}}
-function pintaModo(avisa){
- $('#brepm').innerHTML=ic(MODO==='um'?'rep1':'rep');$('#brepm').classList.toggle('on',MODO!=='normal');
- $('#bshuf').classList.toggle('on',ALEA);
- const t=[];if(MODO!=='normal')t.push(MODOT[MODO]);if(ALEA)t.push('Aleatório');
- const l=$('#modolbl');l.hidden=!t.length;l.textContent=t.join(' · ');
- if(avisa)toast(t.length?t.join(' · '):'Sem repetição')}
-
+/* Tocar em ordem aleatória: embaralha a fila uma vez; anterior/próxima seguem a ordem sorteada e a fila termina no fim */
+function aleatorio(modo){
+ let rels;
+ if(ACTIVE_PL)rels=LIBQ.slice();
+ else if(modo==='soltas')rels=LIBSOLTAS.slice();
+ else rels=($('#lf').value.trim()?LIBQ.slice():todasRels());
+ rels=rels.filter(r=>!ehVid(r));
+ if(!rels.length)return toast('Nenhuma música para tocar');
+ for(let i=rels.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[rels[i],rels[j]]=[rels[j],rels[i]]}
+ QUEUE=rels;tocar(rels[0])}
+function proxima(d){const i=QUEUE.indexOf(CUR),n=i<0?null:QUEUE[i+d];if(n)tocar(n);else if(d>0)stopPlayer()}
 function hsl2rgb(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};return[f(0),f(8),f(4)]}
 function plCor(im){try{const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.drawImage(im,0,0,16,16);const d=x.getImageData(0,0,16,16).data;let r=0,g=0,b=0,w=0;for(let i=0;i<d.length;i+=4){const R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B),sa=mx?(mx-mn)/mx:0,k=Math.max(.05,.15+sa*sa);r+=R*k;g+=G*k;b+=B*k;w+=k}return[r/w,g/w,b/w]}catch(e){return null}}
 function plTema(c){const r=c[0],g=c[1],b=c[2],m=Math.max(r,g,b,1),mn=Math.min(r,g,b),sat=(m-mn)/m,f=Math.min(3,235/m),a=sat<.1?[235,235,235]:[r*f,g*f,b*f].map(Math.round),p=$('#pl').style;
@@ -3545,9 +3524,8 @@ function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.durat
 function tocar(rel,box){
  const all=[...(LIB.musicas||[]),...(LIB.videos||[]),...(LIB.playlists||[]).flatMap(p=>p.itens)];
  const x=all.find(i=>i.rel===rel);if(!x)return;
- if(box){QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);TOCADAS=new Set();HIST=[]}
+ if(box){QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel)}
  const vid=/\.(mp4|mkv)$/i.test(rel),url='/api/audio?f='+encodeURIComponent(rel),capa='/api/capa?f='+encodeURIComponent(rel);
- if(rel!==ANT)REP1=false;ANT=rel;TOCADAS.add(rel);HIST.push(rel);if(HIST.length>300)HIST.shift();
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
@@ -3557,7 +3535,7 @@ function tocar(rel,box){
  else{$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
   (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;a=MA()}
  a.volume=VOL;
- a.onended=fimMusica;a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
+ a.onended=()=>proxima(1);a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
  a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>plState(ST_STOP?'stop':'pause');
  a.ontimeupdate=plTime;a.onloadedmetadata=plTime;a.ondurationchange=plTime;
  if(!reuse)plState('pause');plTime();
@@ -3566,9 +3544,6 @@ function tocar(rel,box){
  marcarNow()}
 const togglePlay=()=>{const a=MA();if(!a)return;if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}else a.pause()};
 $('#plprev').onclick=()=>proxima(-1);$('#plnext').onclick=()=>proxima(1);
-$('#brepm').onclick=()=>{MODO=MODOS[(MODOS.indexOf(MODO)+1)%MODOS.length];REP1=false;salvaModo();pintaModo(true)};
-$('#bshuf').onclick=()=>{ALEA=!ALEA;TOCADAS=new Set(CUR?[CUR]:[]);salvaModo();pintaModo(true)};
-pintaModo(false);
 $('#bplay').onclick=togglePlay;
 $('#brew').onclick=()=>{const a=MA();if(a)a.currentTime=Math.max(0,a.currentTime-10)};
 $('#bff').onclick=()=>{const a=MA();if(a&&isFinite(a.duration))a.currentTime=Math.min(a.duration-0.2,a.currentTime+10)};
