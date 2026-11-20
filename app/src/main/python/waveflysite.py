@@ -147,6 +147,8 @@ def limpar_erro(ex):
 
 def bloqueio_youtube(m):
     m = m.lower()
+    if "confirm your age" in m or "age-restrict" in m:
+        return False          # restrição de idade não é bloqueio de robô: só o login resolve, e esperar não adianta
     return "not a bot" in m or "sign in to confirm" in m
 
 
@@ -1023,6 +1025,10 @@ def limpar_cancelado(it, so_sobras=False):
 
 def amigavel(erro):
     e = (erro or "").lower()
+    if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "copyright")):
+        return "Bloqueado por direitos autorais ou pela região."
+    if "confirm your age" in e or "age-restrict" in e:
+        return "Restrição de idade: precisa entrar com a conta do YouTube (Ajustes)."
     if any(x in e for x in ("unsupported url", "extractor", "not a valid url", "no suitable", "is not a valid", "invalid url")):
         return "Link não reconhecido. Confira se ele está correto."
     if any(x in e for x in ("video unavailable", "private video", "has been removed", "no longer available", "this video is", "not available")):
@@ -1693,12 +1699,14 @@ def tratar_falha(it, erro):
     if bloqueio:
         acionar_freio("YouTube pediu confirmação (bloqueio)")
         DEV["esfriar"] = time.time() + 240
-    permanente = (any(x in e for x in ("private video", "members-only", "copyright")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
+    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
     tent = it.get("_tent", 0) + 1
     it["_tent"] = tent
+    if suspeito_indisp and not permanente and not bloqueio and tent >= 2:
+        permanente = True        # "indisponível" depois de 2 tentativas: não adianta insistir (poupa vaga e tempo no lote)
     if not permanente and tent <= 4:
         atraso = 0 if (tent == 1 and not bloqueio) else (90 * tent if bloqueio else 12 * tent)
         # Nos testes, trocar de cliente do YouTube sempre piorou ("format not available"), então fica o de sempre.
@@ -2087,6 +2095,100 @@ def lista_biblioteca(com_dur=False):
     return out
 
 
+def _dir_destino(destino, criar):
+    destino = (destino or "").strip().strip("/\\")
+    if any(c in destino for c in '\\:*?"<>|') or ".." in destino.split("/"):
+        raise ValueError("Nome de playlist inválido")
+    r = os.path.realpath(raiz())
+    dest = os.path.realpath(os.path.join(r, destino)) if destino else r
+    if dest != r and not dest.startswith(r + os.sep):
+        raise ValueError("Destino inválido")
+    if criar:
+        os.makedirs(dest, exist_ok=True)
+    return dest
+
+
+def conflitos_mover(rels, destino):
+    """Músicas que já existem (mesmo nome) na playlist de destino, para o app perguntar o que fazer."""
+    dest = _dir_destino(destino, False)
+    out = []
+    for rel in rels or []:
+        if not isinstance(rel, str) or rel.startswith("pasta:"):
+            continue
+        p = caminho_seguro(rel)
+        if not p or not os.path.isfile(p) or not p.lower().endswith(EXTS) or os.path.dirname(p) == dest:
+            continue
+        alvo = os.path.join(dest, os.path.basename(p))
+        if os.path.isfile(alvo):
+            a, b = os.stat(p), os.stat(alvo)
+            out.append({"rel": rel, "nome": os.path.basename(p),
+                        "o": {"tam": a.st_size, "mt": int(a.st_mtime)}, "d": {"tam": b.st_size, "mt": int(b.st_mtime)}})
+    return {"conflitos": out}
+
+
+def mover_copiar(rels, destino, copiar=False, decisoes=None):
+    """Move (ou copia) músicas para outra playlist (pasta). destino "" = raiz. Cria a pasta se não existir.
+    Leva junto a imagem de capa ao lado. Nome repetido no destino vira "nome (2)". Devolve {ok, pulou, falhas}."""
+    dest = _dir_destino(destino, True)
+    decisoes = decisoes or {}
+    ok = pulou = 0
+    falhas = []
+    NOMES["k"] = None
+    for rel in rels or []:
+        if not isinstance(rel, str) or rel.startswith("pasta:"):
+            continue
+        p = caminho_seguro(rel)
+        if not p or not os.path.isfile(p) or not p.lower().endswith(EXTS):
+            falhas.append("arquivo não encontrado")
+            continue
+        if os.path.dirname(p) == dest:
+            pulou += 1          # já está nessa pasta
+            continue
+        base, ext = os.path.splitext(os.path.basename(p))
+        nome, n = base, 2
+        if os.path.exists(os.path.join(dest, base + ext)):
+            acao = decisoes.get(rel, "duas")
+            if acao == "pular":
+                pulou += 1
+                continue
+            if acao != "substituir":            # "duas": mantém as duas, a nova ganha " (2)"
+                while os.path.exists(os.path.join(dest, nome + ext)):
+                    nome = "%s (%d)" % (base, n)
+                    n += 1
+        alvo = os.path.join(dest, nome + ext)
+        try:
+            if copiar:
+                shutil.copy2(p, alvo)
+            else:
+                shutil.move(p, alvo)
+            for e in (".jpg", ".jpeg", ".png", ".webp"):       # capa solta ao lado
+                cap = os.path.splitext(p)[0] + e
+                if os.path.isfile(cap):
+                    try:
+                        (shutil.copy2 if copiar else shutil.move)(cap, os.path.splitext(alvo)[0] + e)
+                    except OSError:
+                        pass
+            try:                                               # miniatura em cache acompanha o arquivo
+                c_old, c_new = _cache_capa(p), _cache_capa(alvo)
+                if os.path.isfile(c_old):
+                    (shutil.copy2 if copiar else shutil.move)(c_old, c_new)
+            except Exception:
+                pass
+            if not copiar:
+                if os.path.realpath(p) in SEM_CAPA:
+                    SEM_CAPA.discard(os.path.realpath(p))
+                    SEM_CAPA.add(os.path.realpath(alvo))
+                _trocar_caminho(p, alvo)
+                limpar_pasta_vazia(p)
+            ok += 1
+        except OSError as ex:
+            falhas.append(str(ex)[:80])
+            dev_log("erro", "mover: %s (%s)" % (str(ex)[:80], rel[:60]))
+    if not copiar:
+        _salvar_sem_capa()
+    return {"ok": ok, "pulou": pulou, "falhas": falhas}
+
+
 RESTOS_PASTA = (".jpg", ".jpeg", ".png", ".webp", ".part", ".ytdl", ".temp", ".txt", ".json")
 
 
@@ -2473,6 +2575,11 @@ class H(BaseHTTPRequestHandler):
                 return self._json(aplicar_cfg(d))
             if p == "/api/apagar":
                 return self._json(apagar(d.get("rels") or []))
+            if p == "/api/mover_checar":
+                return self._json(conflitos_mover(d.get("rels") or [], d.get("destino", "")))
+            if p == "/api/mover":
+                return self._json(mover_copiar(d.get("rels") or [], d.get("destino", ""), bool(d.get("copiar")),
+                                               d.get("decisoes") if isinstance(d.get("decisoes"), dict) else None))
             if p == "/api/converter":
                 return self._json(converter_mp3(d.get("rels") or []))
             if p == "/api/etiqueta":
@@ -2660,6 +2767,8 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--sf2);padding:1px 
 .cv{width:46px;height:46px}.cv.lg{width:56px;height:56px;border-radius:12px}
 .lr{border-radius:12px;padding:6px 8px;margin:0 -8px;transition:background .15s}.lr.now{background:var(--acs)}
 .lr .cv{box-shadow:0 1px 2px rgb(0 0 0 / .12)}
+.shufrow{display:flex;gap:8px;margin:12px 0 10px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:8px;background:rgba(127,110,90,.25);color:var(--mu,#b9a58b);margin-left:4px}.tag.g{background:rgba(130,160,80,.22);color:#b0ba84}.shufrow button{flex:1;padding:10px 8px;font-size:13.5px}
 /*skin-organico*/
 *{scrollbar-width:thin;scrollbar-color:var(--sf2) transparent}
 :root{--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;--paper:#fbf8ef}
@@ -2970,7 +3079,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 
 <section class="v" id="v-musicas" hidden>
   <div class="row" style="margin-top:14px">
-    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="videos">Vídeos</button></div>
+    <div class="sg" id="segm"><button data-v="todas" class="on">Músicas</button><button data-v="pls">Playlists</button><button data-v="videos">Vídeos</button></div>
     <span class="sm mut" id="libinfo"></span>
   </div>
   <div id="m-todas" style="margin-top:12px"><input type="text" id="lf" placeholder="Filtrar músicas..."><select id="lsort" aria-label="Ordenar" style="margin-top:8px;width:100%;padding:10px 12px;border-radius:12px;background:var(--sf);color:var(--fg);border:1px solid var(--ln);font:inherit"><option value="pad">Ordem: padrão</option><option value="rec">Mais recentes primeiro</option><option value="ant">Mais antigas primeiro</option><option value="az">Nome A–Z</option><option value="za">Nome Z–A</option><option value="dmax">Mais longas primeiro</option><option value="dmin">Mais curtas primeiro</option><option value="tmax">Maiores primeiro</option><option value="tmin">Menores primeiro</option></select><label id="wrapvid" hidden style="display:flex;gap:8px;align-items:center;margin:6px 0 10px;cursor:pointer;font-size:14px"><input type="checkbox" id="chkvid" style="width:18px;height:18px"> Mostrar vídeos <span class="sm mut">(prioriza músicas)</span></label><div id="lib"></div></div>
@@ -2989,7 +3098,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
 <input type="file" id="edfile" accept="image/*" hidden>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
-<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bdel">Apagar</button></div></div>
+<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -3007,6 +3116,27 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div class="vrow" id="vrow" hidden><input type="range" id="vol" min="0" max="100" step="1" aria-label="Volume"></div>
   <div id="pl-audio" hidden></div>
 </div>
+
+<div class="sheet" id="mvs"><div class="spn">
+  <div class="grip"></div>
+  <div class="row"><b id="mvt" style="font-size:17px">Mover para…</b><button class="t" id="mvx" style="color:var(--at);font-weight:600">Fechar</button></div>
+  <div class="sg full" id="mvmodo" style="margin:10px 0"><button data-v="mover" class="on">Mover</button><button data-v="copiar">Copiar</button></div>
+  <div id="mvl"></div>
+  <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="mvnew" placeholder="Nova playlist…" maxlength="80" style="flex:1"><button class="t" id="mvgo" style="color:var(--at);font-weight:600">Criar</button></div>
+</div></div>
+
+<div class="sheet" id="mvc"><div class="spn">
+  <div class="grip"></div>
+  <b id="mcT" style="font-size:18px;display:block">Já existe na playlist</b>
+  <div id="mcN" class="sm" style="margin:6px 0 10px;word-break:break-word;color:var(--fg)"></div>
+  <div class="sm mut" style="margin-bottom:4px">novo · já existente</div>
+  <div class="row"><span class="sm mut">Tamanho</span><span id="mcS" class="sm"></span></div>
+  <div class="row"><span class="sm mut">Data</span><span id="mcD" class="sm"></span></div>
+  <label id="mcAllW" style="display:flex;gap:10px;align-items:center;margin:12px 0 4px;font-size:14px;cursor:pointer"><input type="checkbox" id="mcAll" style="width:18px;height:18px"><span id="mcAllT"></span></label>
+  <div style="display:flex;gap:8px;margin-top:10px"><button id="mcP" style="flex:1">Pular</button><button id="mcB" style="flex:1">Manter as duas</button></div>
+  <button id="mcR" class="p" style="width:100%;margin-top:8px">Substituir</button>
+  <button id="mcX" class="t" style="width:100%;margin-top:6px">Cancelar tudo</button>
+</div></div>
 
 <div class="sheet" id="sheet"><div class="spn">
   <div class="grip"></div>
@@ -3312,17 +3442,19 @@ function updbars(){
  $('#libbar').hidden=off||rep||!SEL.size;
  $('#bsa').hidden=!selTudo().some(r=>!SEL.has(r));
  const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=SEL.size-nP;
- $('#bedit').hidden=SEL.size!==1||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
+ $('#bedit').hidden=SEL.size!==1||nP>0;$('#bmv').hidden=!SEL.size||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
  $('#selc').textContent=!SEL.size?'':nP?(nP+(nP>1?' pastas':' pasta')+(nF?' · '+nF+(nF>1?' arquivos':' arquivo'):'')):(SEL.size+(SEL.size>1?' selecionados':' selecionado'));
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
 function nrep(){return RG.reduce((a,g)=>a+g.arquivos.filter(x=>x.marcada).length,0)}
 
 let ACTIVE_PL = null;
+let LIBVIEW = 'todas';   /* tela da biblioteca: todas (músicas soltas) | pls (playlists) */
+let LIBPLS = [];
 let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro')==='1'}catch(e){}
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
 
-let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBIO=null;
+let LIBN=60,LIBNV=60,LIBQ=[],LIBQV=[],LIBSOLTAS=[],LIBIO=null;
 let LORD='pad';try{LORD=localStorage.getItem('wf_ord')||'pad'}catch(e){}
 const CAPAV={v:0};
 function ordena(arr){
@@ -3332,36 +3464,44 @@ function ordena(arr){
 
 $('#lsort').value=LORD;
 $('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('wf_ord',LORD)}catch(e){}if(/^d/.test(LORD)&&!LIB.durok)await loadLib();else dlib()};
+const nz=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const ehVid=r=>/\.(mp4|mkv)$/i.test(r);
 function dlib(){
- $('#wrapvid').hidden=!(ACTIVE_PL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
- const f=$('#lf').value.trim().toLowerCase();
- const fv=$('#lfv').value.trim().toLowerCase();
+ const emPL=!!(LIBVIEW==='pls'&&ACTIVE_PL);
+ $('#wrapvid').hidden=!(emPL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
+ const f=nz($('#lf').value.trim());
+ const fv=nz($('#lfv').value.trim());
  
- const ITP=ACTIVE_PL?ordena(ACTIVE_PL.itens):[];
+ const ITP=emPL?ordena(ACTIVE_PL.itens).filter(x=>!f||nz(x.nome).includes(f)):[];
  let mus = ordena(LIB.musicas || []);
- if(f) mus = mus.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(f));
+ if(f) mus = mus.filter(x=>nz(x.nome+' '+x.pasta).includes(f));
  
  let pls = LIB.playlists || [];
+ if(f&&LIBVIEW==='pls'&&!emPL) pls = pls.filter(p=>nz(p.nome).includes(f)||(p.itens||[]).some(x=>!ehVid(x.rel)&&nz(x.nome).includes(f)));
  let hPls = '';
- if(ACTIVE_PL){
-  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div>` +
+ const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
+ if(emPL){
+  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow"><button data-shuf="lista">Tocar em aleatório</button></div>` +
    (LIBQ=(PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
     (PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
     return `<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, isVid)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">${isVid?'Assistir':'Ouvir'}</button></div>`;
    }).join('');
+ } else if(LIBVIEW==='pls'){
+  LIBQ=[];
+  LIBPLS=pls.flatMap(p=>nz(p.nome).includes(f)?(p.itens||[]):(p.itens||[]).filter(x=>nz(x.nome).includes(f))).map(x=>x.rel).filter(r=>!ehVid(r));
+  hPls = (pls.length?`<div class="shufrow"><button data-shuf="pls">Tocar todas em aleatório</button></div>`:'') + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
  } else {
-  hPls = pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
-  if(pls.length && mus.length) hPls += `<div class="lh"><span>Arquivos Soltos na Raiz</span></div>`;
-  LIBQ=mus.map(x=>x.rel);
-  hPls += mus.slice(0,LIBN).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`).join('');
+  LIBQ=mus.map(x=>x.rel);LIBSOLTAS=LIBQ.slice();
+  hPls = (mus.length?`<div class="shufrow"><button data-shuf="soltas">Tocar em aleatório</button></div>`:'') + mus.slice(0,LIBN).map(linha).join('');
  }
- const totalLib = ACTIVE_PL ? LIBQ.length : mus.length;
+ const totalLib = emPL ? LIBQ.length : (LIBVIEW==='pls'?0:mus.length);
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
- $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">Baixe uma música na aba Baixar e ela aparece aqui.</p></div>`;
+ const vaz = (LIBVIEW==='pls'&&!emPL) ? ['Nenhuma playlist ainda.','Baixe uma playlist na aba Baixar ou crie uma com Mover / Copiar.'] : ['Nenhum arquivo encontrado.','Baixe uma música na aba Baixar e ela aparece aqui.'];
+ $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>${vaz[0]}</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':vaz[1]}</p></div>`;
 
  let vids = ordena(LIB.videos || []);
- if(fv) vids = vids.filter(x=>(x.nome+' '+x.pasta).toLowerCase().includes(fv));
+ if(fv) vids = vids.filter(x=>nz(x.nome+' '+x.pasta).includes(fv));
  LIBQV=vids.map(x=>x.rel);
  $('#libv').innerHTML = vids.length ? vids.slice(0,LIBNV).map(x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, true)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Assistir</button></div>`).join('') : `<div class="empty">${WAVE}<p>Nenhum vídeo MP4 encontrado nesta pasta.</p><p class="sm">Vídeos baixados em MP4 aparecem aqui.</p></div>`;
  if(vids.length>LIBNV) $('#libv').insertAdjacentHTML('beforeend',`<div id="libvmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBNV} de ${vids.length} · role para ver mais</div>`);
@@ -3379,6 +3519,8 @@ document.addEventListener('click',e=>{
   const opp=e.target.closest('[data-oppl]');
  if(opp){const nome=opp.dataset.oppl;ACTIVE_PL=LIB.playlists.find(p=>p.nome===nome)||null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
  if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
+ const sh=e.target.closest('[data-shuf]');
+ if(sh){aleatorio(sh.dataset.shuf);return}
  const pr=e.target.closest('[data-playrel]');
  if(pr){tocar(pr.dataset.playrel,pr.closest('#lib,#libv'));return}
  const cp=e.target.closest('input[data-pasta]');
@@ -3389,7 +3531,8 @@ document.addEventListener('click',e=>{
 
 $$('#segm button').forEach(b=>b.onclick=()=>{
  segset('segm',b.dataset.v);
- $('#m-todas').hidden=b.dataset.v!=='todas';
+ if(b.dataset.v==='todas'||b.dataset.v==='pls'){LIBVIEW=b.dataset.v;LIBN=60;SEL.clear();dlib()}
+ $('#m-todas').hidden=!(b.dataset.v==='todas'||b.dataset.v==='pls');
  $('#m-videos').hidden=b.dataset.v!=='videos';
  $('#m-rep').hidden=b.dataset.v!=='rep';
  updbars();
@@ -3402,6 +3545,14 @@ let VOL=0.9;try{const v=parseFloat(localStorage.getItem('wf_vol'));if(v>=0&&v<=1
 const MA=()=>$('#au');
 const tf=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+':'+p2(m)+':'+p2(x):p2(m)+':'+p2(x)};
 function marcarNow(){$$('#lib .lr,#libv .lr').forEach(r=>{const b=r.querySelector('[data-playrel]');r.classList.toggle('now',!!b&&!!CUR&&b.dataset.playrel===CUR)})}
+const todasRels=()=>[...(LIB.musicas||[]),...(LIB.playlists||[]).flatMap(p=>p.itens||[])].map(x=>x.rel).filter(r=>!ehVid(r));
+/* Tocar em ordem aleatória: embaralha a fila uma vez; anterior/próxima seguem a ordem sorteada e a fila termina no fim */
+function aleatorio(modo){
+ let rels=modo==='pls'?LIBPLS.slice():modo==='soltas'?LIBSOLTAS.slice():LIBQ.slice();
+ rels=rels.filter(r=>!ehVid(r));
+ if(!rels.length)return toast('Nenhuma música para tocar');
+ for(let i=rels.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[rels[i],rels[j]]=[rels[j],rels[i]]}
+ QUEUE=rels;tocar(rels[0])}
 function proxima(d){const i=QUEUE.indexOf(CUR),n=i<0?null:QUEUE[i+d];if(n)tocar(n);else if(d>0)stopPlayer()}
 function hsl2rgb(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};return[f(0),f(8),f(4)]}
 function plCor(im){try{const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');x.drawImage(im,0,0,16,16);const d=x.getImageData(0,0,16,16).data;let r=0,g=0,b=0,w=0;for(let i=0;i<d.length;i+=4){const R=d[i],G=d[i+1],B=d[i+2],mx=Math.max(R,G,B),mn=Math.min(R,G,B),sa=mx?(mx-mn)/mx:0,k=Math.max(.05,.15+sa*sa);r+=R*k;g+=G*k;b+=B*k;w+=k}return[r/w,g/w,b/w]}catch(e){return null}}
@@ -3420,7 +3571,7 @@ function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.durat
 function tocar(rel,box){
  const all=[...(LIB.musicas||[]),...(LIB.videos||[]),...(LIB.playlists||[]).flatMap(p=>p.itens)];
  const x=all.find(i=>i.rel===rel);if(!x)return;
- if(box)QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel);
+ if(box){QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel)}
  const vid=/\.(mp4|mkv)$/i.test(rel),url='/api/audio?f='+encodeURIComponent(rel),capa='/api/capa?f='+encodeURIComponent(rel);
  CUR=rel;
  $('#plt').textContent=x.nome;$('#pls').textContent=x.pasta||(vid?'Vídeo':'Música');plCapa(x,capa,vid);
@@ -3462,8 +3613,50 @@ function stopPlayer(){
 function stopIf(r){if(CUR&&r.some(x=>x===CUR||(x.startsWith('pasta:')&&CUR.startsWith(x.slice(6)+'/'))))stopPlayer()}
 $('#plx').onclick=stopPlayer;
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
+/* Mover / copiar para outra playlist */
+let MVMODO='mover';
+const mvRels=()=>[...SEL].filter(r=>!r.startsWith('pasta:'));
+function mvAbre(){
+ const rels=mvRels();if(!rels.length)return;
+ const atual=LIBVIEW==='pls'&&ACTIVE_PL?ACTIVE_PL.nome:'';
+ const ds=[{n:'',t:'Soltas (raiz)',c:(LIB.musicas||[]).length}].concat((LIB.playlists||[]).map(p=>({n:p.nome,t:p.nome,c:p.total}))).filter(d=>d.n!==atual);
+ $('#mvt').textContent=rels.length+(rels.length>1?' músicas selecionadas':' música selecionada');
+ $('#mvl').innerHTML=ds.map(d=>`<button class="rb" data-mvd="${esc(d.n)}"><span>${esc(d.t)}</span><span class="r"><small>${d.c} itens</small></span></button>`).join('')||'<p class="sm mut">Nenhuma outra playlist. Crie uma abaixo.</p>';
+ $('#mvnew').value='';segset('mvmodo',MVMODO);$('#mvs').classList.add('on')}
+const dtf=t=>{const d=new Date(t*1000);return p2(d.getDate())+'/'+p2(d.getMonth()+1)+' '+p2(d.getHours())+':'+p2(d.getMinutes())};
+/* Música repetida no destino: pergunta (pular / manter as duas / substituir), com "fazer o mesmo com os próximos" */
+function mvPergunta(cs,dest){return new Promise(res=>{
+ const dec={};let i=0;
+ const tag=(ok,a,b)=>esc(a)+' · '+esc(b)+` <span class="tag ${ok?'g':''}">${ok?'igual':'diferente'}</span>`;
+ const mostra=()=>{const c=cs[i],resto=cs.length-i-1;
+  $('#mcT').textContent=dest?`Já existe em "${dest}"`:'Já existe nas Soltas';
+  $('#mcN').textContent=c.nome;
+  $('#mcS').innerHTML=tag(c.o.tam===c.d.tam,tamf(c.o.tam),tamf(c.d.tam));
+  $('#mcD').innerHTML=tag(Math.abs(c.o.mt-c.d.mt)<2,dtf(c.o.mt),dtf(c.d.mt));
+  $('#mcAllW').hidden=!resto;$('#mcAll').checked=false;$('#mcAllT').textContent=`Fazer o mesmo com os próximos (${resto})`};
+ const fim=ok=>{$('#mvc').classList.remove('on');res(ok?dec:null)};
+ const escolhe=a=>{dec[cs[i].rel]=a;
+  if($('#mcAll').checked&&cs.length-i-1>0){for(let k=i+1;k<cs.length;k++)dec[cs[k].rel]=a;return fim(true)}
+  i++;if(i>=cs.length)return fim(true);mostra()};
+ $('#mcP').onclick=()=>escolhe('pular');$('#mcB').onclick=()=>escolhe('duas');$('#mcR').onclick=()=>escolhe('substituir');$('#mcX').onclick=()=>fim(false);
+ mostra();$('#mvs').classList.remove('on');$('#mvc').classList.add('on')})}
+async function mvFaz(dest){
+ const rels=mvRels(),copiar=MVMODO==='copiar';if(!rels.length)return;
+ try{const ck=await api('/api/mover_checar',{rels,destino:dest});
+  let dec={};
+  if(ck.conflitos&&ck.conflitos.length){dec=await mvPergunta(ck.conflitos,dest);if(!dec)return}
+  const r=await api('/api/mover',{rels,destino:dest,copiar,decisoes:dec});
+  if(!copiar)stopIf(rels);
+  SEL.clear();$('#mvs').classList.remove('on');await loadLib();
+  toast([r.ok+(copiar?' copiadas':' movidas')].concat(r.pulou?[r.pulou+' ignoradas'] :[]).concat(r.falhas&&r.falhas.length?[r.falhas.length+' falhas']:[]).join(' · '))
+ }catch(e){toast(e.message)}}
+$('#bmv').onclick=mvAbre;$('#mvx').onclick=()=>$('#mvs').classList.remove('on');
+$('#mvs').onclick=e=>{if(e.target.id==='mvs')$('#mvs').classList.remove('on')};
+$('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return;MVMODO=b.dataset.v;segset('mvmodo',MVMODO)};
+$('#mvl').onclick=e=>{const b=e.target.closest('[data-mvd]');if(b)mvFaz(b.dataset.mvd)};
+$('#mvgo').onclick=()=>{const n=$('#mvnew').value.trim();if(!n)return toast('Digite o nome da playlist');mvFaz(n)};
 /* Selecionar tudo: dentro de uma pasta, as músicas dela; na tela das pastas, se já há pasta marcada, todas as pastas; senão, as músicas soltas */
-function selTudo(){if(!ACTIVE_PL&&[...SEL].some(r=>r.startsWith('pasta:')))return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
+function selTudo(){if(LIBVIEW==='pls'&&!ACTIVE_PL)return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
 $('#bsa').onclick=()=>{selTudo().forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=n-nP;
  const msg=(nP?`Apagar <b>${nP}</b> ${nP>1?'pastas inteiras':'pasta inteira'}, com todos os arquivos dentro?`+(nF?'<br>':''):'')+(nF?`Apagar <b>${nF}</b> arquivo${nF>1?'s':''} do aparelho?`:'');
@@ -3766,9 +3959,9 @@ document.addEventListener('input', ()=>setTimeout(salvaTit, 600));
 </script>
 <style>/* TEMA-WAVEFLY-FINAL - visual novo: cores unificadas e botões 3D médios (só aparência) */
 :root{--t-bg:#f4e9d3;--t-s1:#fffaf0;--t-s2:#f0e2c6;--t-ln:#dcc9a3;--t-tx:#34200f;--t-mu:#8b7155;
---t-ac1:#ff9d45;--t-ac2:#e46f22;--t-acd:#a84a12;--t-on:#2b1304;--t-bt1:#fffdf6;--t-bt2:#eadbbb;--t-btd:#bfa57a;--t-bg-ink:#34200f}
+--t-ac1:#C9672A;--t-ac2:#C9672A;--t-acd:#a84a12;--t-on:#2a1206;--t-bt1:#f7ecd6;--t-bt2:#f1e4c8;--t-btd:#bfa57a;--t-bg-ink:#34200f}
 @media(prefers-color-scheme:dark){:root{--t-bg:#17110d;--t-s1:#241b14;--t-s2:#2f231a;--t-ln:#43332a;--t-tx:#f6ead3;--t-mu:#b9a58b;
---t-ac1:#ffa94f;--t-ac2:#e9742a;--t-acd:#8f3d0d;--t-on:#2b1304;--t-bt1:#4a392c;--t-bt2:#33271d;--t-btd:#120c08;--t-bg-ink:#f6ead3}}
+--t-ac1:#C9672A;--t-ac2:#D8742F;--t-acd:#8f3d0d;--t-on:#2a1206;--t-bt1:#2f2219;--t-bt2:#2c1f18;--t-btd:#120c08;--t-bg-ink:#f6ead3}}
 html body{background:var(--t-bg)!important;color:var(--t-tx)!important}
 html body h1,html body h2,html body h3,html body .wm,html body .wm i{text-shadow:none!important}
 html body .wm i{color:var(--t-ac2)!important}
@@ -3777,47 +3970,47 @@ html body .mut,html body .sm,html body .sub,html body p.mut{color:var(--t-mu)!im
 
 /* cartões e listas: borda fina e sombra suave */
 html body .lr,html body .pc,html body .pl-card,html body .rs,html body .tr,html body .chip,html body .plc,html body .deliver,html body #tray,html body .rb,html body .hello,html body .card,html body .cd{
- background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
- box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 3px 10px rgba(0,0,0,.22)!important;color:var(--t-tx)!important}
+ background:linear-gradient(var(--t-s1),var(--t-s1))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.3)!important;color:var(--t-tx)!important}
 html body .hello{border-style:dashed!important}
 
 /* campos */
 html body textarea,html body input[type=text],html body input[type=number],html body input[type=search],html body select{
  background:var(--t-s1)!important;color:var(--t-tx)!important;border:1px solid var(--t-ln)!important;border-radius:14px!important;
- box-shadow:inset 0 2px 5px rgba(0,0,0,.25)!important}
+ box-shadow:none!important}
 html body textarea:focus,html body input[type=text]:focus,html body input[type=number]:focus,html body input[type=search]:focus{
- border-color:var(--t-ac1)!important;box-shadow:inset 0 2px 5px rgba(0,0,0,.25),0 0 0 3px rgba(255,157,69,.22)!important;outline:none!important}
+ border-color:var(--t-ac1)!important;box-shadow:0 0 0 3px rgba(201,103,42,.28)!important;outline:none!important}
 
 /* botões 3D médios: gradiente, brilho no topo e borda inferior em relevo */
 html body button,html body .sg button,html body .sg a,html body #bpaste,html body #bclr,html body #fbar button,html body #brep,html body .sbar button,html body .sel button,html body #fbl button,html body .srch>button{
- background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-tx)!important;
- border:1px solid rgba(255,255,255,.10)!important;text-shadow:none!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 3px 0 var(--t-btd),0 6px 9px rgba(0,0,0,.28)!important;
+ background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-tx)!important;
+ border:1px solid var(--t-ln)!important;text-shadow:none!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;
  transition:transform .08s ease,box-shadow .08s ease!important}
 html body button:active,html body .sg button:active,html body .sg a:active,html body .tabs a:active{
- transform:translateY(2px)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 1px 0 var(--t-btd),0 2px 4px rgba(0,0,0,.25)!important}
+ transform:translateY(1px)!important;box-shadow:none!important}
 html body button.t,html body button.more{background:transparent!important;box-shadow:none!important;border-color:transparent!important;color:var(--t-ac2)!important}
 html body button.t:active{transform:none!important}
 
 /* botão principal e item selecionado: laranja */
 html body button.p,html body #bgo,html body .sg button.on,html body .sg a.on,html body .tabs a.on{
- background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;
- border:1px solid rgba(255,255,255,.28)!important;text-shadow:0 1px 0 rgba(255,255,255,.25)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+ background:linear-gradient(var(--t-ac1),var(--t-ac1))!important;color:var(--t-on)!important;
+ border:1px solid rgba(0,0,0,.18)!important;text-shadow:none!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.4)!important}
 html body .tabs a.on svg,html body .tabs a.on span{color:var(--t-on)!important}
 
 /* abas */
-html body .tabs{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
-html body .tabs a{background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;border:1px solid rgba(255,255,255,.08)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd)!important;text-shadow:none!important}
+html body .tabs{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:none!important}
+html body .tabs a{background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-mu)!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;text-shadow:none!important}
 
 /* barras de progresso */
-html body .bar{background:var(--t-s2)!important;box-shadow:inset 0 1px 3px rgba(0,0,0,.4)!important}
-html body .bar i{background:linear-gradient(90deg,var(--t-ac1),var(--t-ac2))!important}
+html body .bar{background:var(--t-s2)!important;box-shadow:none!important}
+html body .bar i{background:linear-gradient(var(--t-ac1),var(--t-ac1))!important}
 
 /* player */
-html body #pl{background:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;background-image:linear-gradient(180deg,var(--t-s1),var(--t-s2))!important;border:1px solid var(--t-ln)!important;
- box-shadow:0 10px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)!important;color:var(--t-tx)!important}
+html body #pl{background:linear-gradient(var(--t-s1),var(--t-s1))!important;background-image:linear-gradient(var(--t-s1),var(--t-s1))!important;border:1px solid var(--t-ln)!important;
+ box-shadow:0 6px 18px rgba(0,0,0,.4)!important;color:var(--t-tx)!important}
 html body #pl *{color:var(--t-tx)}
 html body #bvol,html body #vrow{display:none!important}
 html body #moldura{display:none!important}
@@ -3845,13 +4038,13 @@ html body.pcc .lr.now{background:var(--npb)!important}
 html,body{-webkit-tap-highlight-color:transparent}
 html body::after{display:none!important}
 html body .tabs a,html body .tabs a:nth-child(2),html body .tabs a[data-go],html body .tabs a[href*="buscar"]{
- border:1px solid rgba(255,255,255,.10)!important;background:linear-gradient(180deg,var(--t-bt1),var(--t-bt2))!important;color:var(--t-mu)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 3px 0 var(--t-btd),0 5px 8px rgba(0,0,0,.22)!important;transform:none!important}
+ border:1px solid var(--t-ln)!important;background:linear-gradient(var(--t-bt1),var(--t-bt1))!important;color:var(--t-mu)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.35)!important;transform:none!important}
 html body .tabs a.on,html body .tabs a:nth-child(2).on,html body .tabs a[data-go].on,html body .tabs a[href*="buscar"].on{
- background:linear-gradient(180deg,var(--t-ac1),var(--t-ac2))!important;color:var(--t-on)!important;border:1px solid rgba(255,255,255,.28)!important;
- box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 0 var(--t-acd),0 7px 12px rgba(228,111,34,.35)!important}
+ background:linear-gradient(var(--t-ac1),var(--t-ac1))!important;color:var(--t-on)!important;border:1px solid rgba(0,0,0,.18)!important;
+ box-shadow:0 1px 2px rgba(0,0,0,.4)!important}
 html body .tabs{padding:6px!important}
-html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:inset 0 2px 6px rgba(0,0,0,.28)!important}
+html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!important;box-shadow:none!important}
 </style>
 </body></html>
 '''
