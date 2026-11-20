@@ -150,6 +150,8 @@ DICT = [
     ("Processando links...", "Processing links...", "Procesando enlaces..."),
     ("Nenhum resultado.", "No results.", "Sin resultados."), ("Playlist vazia.", "Empty playlist.", "Lista vacía."),
     ("Nenhum arquivo encontrado.", "No files found.", "No se encontraron archivos."),
+    ("Nenhuma playlist ainda.", "No playlists yet.", "Aún no hay listas."),
+    ("Baixe uma playlist na aba Baixar ou crie uma com Mover / Copiar.", "Download a playlist in the Download tab or create one with Move / Copy.", "Descarga una lista en la pestaña Descargar o crea una con Mover / Copiar."),
     ("Nenhuma repetida encontrada.", "No duplicates found.", "No se encontraron repetidas."),
     ("Nenhum vídeo MP4 encontrado nesta pasta.", "No MP4 video found in this folder.", "No se encontró ningún vídeo MP4 en esta carpeta."),
     ("Pesquise por música ou artista.", "Search for a song or artist.", "Busca una canción o artista."), ("Pesquise por playlist.", "Search for a playlist.", "Busca una lista."),

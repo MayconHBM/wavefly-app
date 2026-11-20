@@ -3497,7 +3497,8 @@ function dlib(){
  }
  const totalLib = emPL ? LIBQ.length : (LIBVIEW==='pls'?0:mus.length);
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
- $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>Nenhum arquivo encontrado.</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':'Baixe uma música na aba Baixar e ela aparece aqui.'}</p></div>`;
+ const vaz = (LIBVIEW==='pls'&&!emPL) ? ['Nenhuma playlist ainda.','Baixe uma playlist na aba Baixar ou crie uma com Mover / Copiar.'] : ['Nenhum arquivo encontrado.','Baixe uma música na aba Baixar e ela aparece aqui.'];
+ $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>${vaz[0]}</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':vaz[1]}</p></div>`;
 
  let vids = ordena(LIB.videos || []);
  if(fv) vids = vids.filter(x=>nz(x.nome+' '+x.pasta).includes(fv));
