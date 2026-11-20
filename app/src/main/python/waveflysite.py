@@ -44,7 +44,7 @@ ANDROID = os.path.isdir("/storage/emulated/0") or bool(os.environ.get("WAVEFLY_D
 PASTA_PADRAO = ("/storage/emulated/0/Download/" + PASTA_NOME) if ANDROID else os.path.join(os.path.expanduser("~"), "Music", PASTA_NOME)
 PASTAS_PADRAO = {PASTA_NOME: PASTA_PADRAO}
 CFG = {"pastas": dict(PASTAS_PADRAO), "atual": PASTA_NOME, "qualidade": 192, "formato": "mp3", "modo_playlist": "pasta",
-       "lote": 40, "pausa_lote": 15, "res": 720}
+       "lote": 40, "pausa_lote": 15, "res": 720, "alt": "manual"}
 
 
 def raiz():
@@ -1679,6 +1679,74 @@ def indisponivel_de_verdade(it):
         return False
 
 
+_RUIM = re.compile(r"\b(live|ao vivo|en vivo|cover|karaoke|reaction|remix|instrumental|8d|slowed|sped up|nightcore|reverb|tutorial|lesson|tribute|concert|mashup|parody|acoustic|piano version)\b", re.I)
+_RUIDO = {"remastered", "remaster", "remasterizado", "official", "audio", "video", "lyrics", "lyric", "hd", "hq", "version", "versao", "classic", "music", "topic", "feat", "ft", "mono", "stereo", "deluxe", "edition", "single", "album"}
+
+
+def _palavras(t):
+    w = re.findall(r"[a-z0-9]+", _sem_acento(t or "").lower())
+    return [x for x in w if x not in _RUIDO and not re.fullmatch(r"(19|20)\d\d", x)]
+
+
+def buscar_alternativa(it):
+    """Procura outra versão do mesmo vídeo: título parecido e duração parecida. Devolve o endereço ou None."""
+    titulo = (it.get("titulo") or "").strip()
+    m = re.search(r"([\w-]{11})(?:[&?#]|$)", it.get("url", ""))
+    vid0 = m.group(1) if m else ""
+    if len(titulo) < 2 or titulo.startswith("http"):
+        return None
+    canal = re.sub(r"\s*(-\s*topic|vevo|official)\s*$", "", (TIT_CACHE.get(vid0) or {}).get("canal", ""), flags=re.I).strip()
+    d0 = it.get("dur") or DURS.get(chave(it.get("url", ""))) or 0
+    a = set(_palavras(titulo))
+    if not a:
+        return None
+    art = set(_palavras(canal))
+    curto = len(a) <= 2
+    with yt_dlp.YoutubeDL(dict(OPTS, extract_flat=True, skip_download=True, socket_timeout=10)) as ydl:
+        info = ydl.extract_info("ytsearch10:" + (titulo + " " + canal).strip(), download=False)
+    melhor, nota = None, -1
+    for e in info.get("entries") or []:
+        if not isinstance(e, dict) or len(e.get("id") or "") != 11 or e["id"] == vid0:
+            continue
+        t = e.get("title") or ""
+        mr = _RUIM.search(t)
+        if mr and not re.search(r"\b" + re.escape(mr.group(1)) + r"\b", titulo, re.I):
+            continue
+        c = e.get("duration")
+        if d0:
+            if not c or abs(c - d0) > max(15, 0.10 * d0):
+                continue
+        b = set(_palavras(t + " " + (e.get("channel") or e.get("uploader") or "")))
+        cob = len(a & b) / len(a)
+        if cob < (0.9 if not d0 else 0.75):
+            continue
+        if curto and art and not (art & b):
+            continue            # título curto ("Hello", "Vogue"): exige o artista também
+        n = cob - (abs(c - d0) / d0 if (d0 and c) else 0) - 0.02 * max(0, len(set(_palavras(t))) - len(a))
+        if n > nota:
+            melhor, nota = e["id"], n
+    return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
+
+
+def tentar_alternativa(it, auto=False):
+    """Troca o endereço pelo da versão alternativa e recoloca na fila. Se não achar, fica como falha."""
+    try:
+        novo = buscar_alternativa(it)
+    except Exception:
+        novo = None
+    with LOCK:
+        if novo and not it.get("_altv"):
+            it.update(_altv=it.get("url", ""), url=novo, status="fila", pct=0, vel="Versão alternativa", erro="", _tent=0, _alt=0,
+                      _cook=False, _nao_antes=0, cancel=False, auto=True, _podealt=False)
+        else:
+            it.update(status="falha", vel="", _podealt=False)
+            if not auto:
+                it["erro"] = "Não achei uma versão alternativa parecida."
+    dev_log("alternativa", "%s: %s" % ((it.get("titulo") or "")[:60], novo or "nenhuma"))
+    salvar_fila()
+    return bool(novo)
+
+
 def tratar_falha(it, erro):
     """Decide: tenta de novo mais tarde (sem travar a fila) ou desiste. Devolve True se foi bloqueio do YouTube."""
     try:
@@ -1718,6 +1786,12 @@ def tratar_falha(it, erro):
             it.update(status="fila", pct=0, vel="Tentando de novo (%d/4)" % tent + (" · em %d s" % atraso if atraso else ""), erro="")
         dev_log("tentativa", "%s (%d/4): %s" % (nome, tent, erro[:150]))
         return bloqueio
+    if permanente and not bloqueio and not it.get("_altv"):
+        if CFG.get("alt") == "auto":
+            if tentar_alternativa(it, auto=True):
+                return False
+        else:
+            it["_podealt"] = True
     DEV["falha"] += 1
     dev_log("erro", "%s: %s" % (nome, erro[:500]))
     if bloqueio:
@@ -1834,6 +1908,13 @@ def acao(d):
                 ITENS.remove(it)
         elif it and a == "forcar" and it["status"] in ("duplicada", "cancelada", "falha", "pulada"):
             it.update(status="fila", forcar=True, auto=True, cancel=False, _cook=False)
+        elif it and a == "alternativa" and it["status"] == "falha" and not it.get("_altv"):
+            it.update(status="fila", vel="Procurando alternativa…", erro="", _nao_antes=time.time() + 300)
+            threading.Thread(target=tentar_alternativa, args=(it,), daemon=True).start()
+        elif a == "alt_falhas":
+            for i in [x for x in ITENS if x["status"] == "falha" and x.get("_podealt") and not x.get("_altv")]:
+                i.update(status="fila", vel="Procurando alternativa…", erro="", _nao_antes=time.time() + 300)
+                threading.Thread(target=tentar_alternativa, args=(i,), daemon=True).start()
         elif a == "tentar_falhas":
             for i in ITENS:
                 if i["status"] == "falha":
@@ -1849,7 +1930,7 @@ def estado():
         c = Counter(i["status"] for i in ITENS)
         ini, fim = SESS["inicio"], SESS["fim"]
         at = next((i for i in ITENS if i["status"] == "baixando"), None)
-        out = {"itens": [{k: i[k] for k in ("id", "url", "titulo", "status", "erro", "sub", "pct", "vel", "arq")} for i in ITENS],
+        out = {"itens": [dict({k: i[k] for k in ("id", "url", "titulo", "status", "erro", "sub", "pct", "vel", "arq")}, alt=bool(i.get("_podealt")), altv=bool(i.get("_altv"))) for i in ITENS],
                "total": len(ITENS), "dec": ((fim or time.time()) - ini) if ini else 0, "aviso": SESS["aviso"],
                "agora": (at["titulo"] or at["url"]) if at else "",
                "pasta": CFG["atual"], "qualidade": CFG["qualidade"]}
@@ -2416,6 +2497,8 @@ def aplicar_cfg(d):
             CFG["res"] = d["res"]
         if d.get("modo_playlist") in ("pasta", "junto"):
             CFG["modo_playlist"] = d["modo_playlist"]
+        if d.get("alt") in ("manual", "auto"):
+            CFG["alt"] = d["alt"]
         if d.get("usar_caminho"):
             cam = os.path.abspath(os.path.expanduser(d["usar_caminho"]))
             os.makedirs(cam, exist_ok=True)
@@ -2452,7 +2535,7 @@ def pasta_ok():
 
 def cfg_publica():
     return {"servidor": SERVIDOR, "res": CFG["res"], "primeira": PRIMEIRA, "pasta_ok": pasta_ok(), "android": ANDROID, "pastas": CFG["pastas"], "atual": CFG["atual"], "caminho": raiz(), "qualidade": CFG["qualidade"],
-            "formato": CFG["formato"], "modo_playlist": CFG["modo_playlist"],
+            "formato": CFG["formato"], "modo_playlist": CFG["modo_playlist"], "alt": CFG.get("alt", "manual"),
             "max_links": MAX_LINKS, "app": APP_NOME}
 
 
@@ -3145,6 +3228,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div class="g" id="g-r"><span class="l">Resolução do Vídeo</span><div class="sg full" data-k="res"><button data-v="360">360p</button><button data-v="720">720p</button><button data-v="1080">1080p</button></div></div>
   <div class="g" id="g-p"><span class="l">Salvar na Pasta</span><button class="rb js-pasta"><span>Pasta</span><span class="r"><b class="js-pnome">…</b><small class="js-pcam"></small></span></button></div>
   <div class="g"><span class="l">Organização de Playlists</span><div class="sg full" data-k="modo_playlist"><button data-v="pasta">Subpasta própria</button><button data-v="junto">Tudo na pasta principal</button></div></div>
+  <div class="g"><span class="l">Vídeo fora do ar</span><div class="sg full" data-k="alt"><button data-v="manual">Perguntar</button><button data-v="auto">Alternativa automática</button></div></div>
   <p class="note" id="srvnote" hidden>Modo servidor ativado: os arquivos expiram após algumas horas.</p>
 </div></div>
 
@@ -3361,6 +3445,7 @@ function rowHTML(i){let sub='',cls='';
  if(i.status==='duplicada'||i.status==='cancelada'||i.status==='falha')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='pulada')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='falha')a+=`<button class="t" data-a="retentar" data-id="${i.id}">Tentar de novo</button>`;
+ if(i.status==='falha'&&i.alt)a+=`<button class="t" data-a="alternativa" data-id="${i.id}" style="color:var(--at);font-weight:600">Tentar versão alternativa</button>`;
  if(i.status==='ok'&&i.arq&&C.servidor)a+=`<a class="t" style="color:var(--at);font-size:13.5px;padding:4px 6px" href="/api/baixar?f=${encodeURIComponent(i.arq)}" download>Receber</a>`;
  a+=`<button class="t" data-a="remover" data-id="${i.id}">${i.status==='baixando'?'Cancelar':'Remover'}</button>`;
  const v=vidOf(i.url),th=v?`<img class="ft" loading="lazy" src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`:'<span class="ft"></span>';

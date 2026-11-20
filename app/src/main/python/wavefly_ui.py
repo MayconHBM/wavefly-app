@@ -20,6 +20,14 @@ DICT = [
     ("Transmissão ao vivo não dá para baixar", "Live streams cannot be downloaded", "Las transmisiones en vivo no se pueden descargar"),
     ("Falhou depois de várias tentativas. Use “Tentar de novo”.", "Failed after several attempts. Use “Retry”.", "Falló tras varios intentos. Usa “Reintentar”."),
     ("Tentar de novo as falhas", "Retry failed ones", "Reintentar las fallidas"),
+    ("Tentar versões alternativas", "Try alternative versions", "Probar versiones alternativas"),
+    ("Tentar versão alternativa", "Try alternative version", "Probar versión alternativa"),
+    ("Vídeo fora do ar", "Video unavailable", "Video no disponible"),
+    ("Perguntar", "Ask me", "Preguntar"),
+    ("Alternativa automática", "Automatic alternative", "Alternativa automática"),
+    ("Não achei uma versão alternativa parecida.", "Couldn't find a similar alternative version.", "No encontré una versión alternativa parecida."),
+    ("Procurando alternativa…", "Looking for an alternative…", "Buscando alternativa…"),
+    ("Versão alternativa", "Alternative version", "Versión alternativa"),
     ("Comparação do lote", "Batch comparison", "Comparación del lote"),
     ("Rápido", "Fast", "Rápido"),
     ("Normal", "Normal", "Normal"),
@@ -519,9 +527,11 @@ var PAUSADO=false;
   var bc=document.getElementById('bcanc');if(!bc)return;
   var bp=mk('<button class="t wfpb" id="bpausa">Pausar tudo</button>');bc.parentNode.insertBefore(bp,bc);
   var bf=mk('<button class="t wfpb" id="btfal" hidden>Tentar de novo as falhas</button>');bc.parentNode.insertBefore(bf,bc);
-  var ATIVOS=0,FALHAS=0;
-  function pinta(){bp.textContent=PAUSADO?T('Continuar'):T('Pausar tudo');bp.hidden=!(PAUSADO||ATIVOS>0);bf.hidden=!FALHAS;bf.textContent=T('Tentar de novo as falhas')+' ('+FALHAS+')'}
-  function aplica(j){PAUSADO=!!j.pausado;ATIVOS=j.ativos||0;FALHAS=j.falhas||0;pinta()}
+  var ba=mk('<button class="t wfpb" id="btalt" hidden>Tentar versões alternativas</button>');bc.parentNode.insertBefore(ba,bc);
+  var ATIVOS=0,FALHAS=0,ALTS=0;
+  function pinta(){bp.textContent=PAUSADO?T('Continuar'):T('Pausar tudo');bp.hidden=!(PAUSADO||ATIVOS>0);bf.hidden=!FALHAS;bf.textContent=T('Tentar de novo as falhas')+' ('+FALHAS+')';ba.hidden=!ALTS;ba.textContent=T('Tentar versões alternativas')+' ('+ALTS+')'}
+  function aplica(j){PAUSADO=!!j.pausado;ATIVOS=j.ativos||0;FALHAS=j.falhas||0;ALTS=j.alts||0;pinta()}
+  ba.onclick=function(){fetch('/api/pausa?alts=1').then(function(r){return r.json()}).then(function(j){aplica(j);try{tick()}catch(e){}}).catch(function(){})};
   bp.onclick=function(){fetch('/api/pausa?v='+(PAUSADO?0:1)).then(function(r){return r.json()}).then(function(j){aplica(j);try{tick()}catch(e){}}).catch(function(){})};
   bf.onclick=function(){fetch('/api/pausa?falhas=1').then(function(r){return r.json()}).then(function(j){aplica(j);try{tick()}catch(e){}}).catch(function(){})};
   function ler(){if(document.hidden)return;fetch('/api/pausa').then(function(r){return r.json()}).then(aplica).catch(function(){})}
