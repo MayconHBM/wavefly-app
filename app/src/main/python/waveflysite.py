@@ -5,16 +5,15 @@
 Uso:   python wavefly_yt.py          ->  abre http://localhost:8773
        python wavefly_yt.py --port 8800
        python wavefly_yt.py --host 0.0.0.0   (acessar de outro aparelho da mesma rede)
-       python wavefly_yt.py --servidor       (modo site: cada um recebe os arquivos no navegador, solto ou em ZIP)
 
 Precisa de:  pip install -U yt-dlp   (+ ffmpeg instalado)
 """
-import argparse, copy, hashlib, json, os, random, re, shutil, signal, subprocess, sys, threading, time, traceback, unicodedata, uuid, webbrowser, zipfile
+import argparse, copy, hashlib, json, os, random, re, shutil, signal, subprocess, sys, threading, time, traceback, unicodedata, webbrowser
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
-from urllib.parse import parse_qs, quote, quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 try:
     import yt_dlp
@@ -28,9 +27,6 @@ INDEX_FILE = os.path.join(BASE, "wavefly_index.json")
 PRIMEIRA = False
 LOCK = threading.RLock()
 LIBERADO = False
-SERVIDOR = False
-HORAS_SERVIDOR = 3
-ZIP_DIR = os.path.join(BASE, ".wavefly_tmp")
 CAPA_DIR = os.path.join(BASE, ".wavefly_capas")
 APP_NOME = "WaveFly YT"
 PASTA_NOME = "WaveFly"
@@ -64,7 +60,7 @@ def migrar_antigos():
 def carregar_cfg():
     global PRIMEIRA
     migrar_antigos()
-    PRIMEIRA = not os.path.exists(CFG_FILE) and not SERVIDOR
+    PRIMEIRA = not os.path.exists(CFG_FILE)
     try:
         with open(CFG_FILE, encoding="utf-8") as f:
             CFG.update(json.load(f))
@@ -74,9 +70,6 @@ def carregar_cfg():
     velho = CFG["pastas"].get("MusicDL")
     if CFG["atual"] == "MusicDL" and PASTA_NOME != "MusicDL" and velho and not (os.path.isdir(velho) and listar_mp3(velho)):
         CFG["atual"] = PASTA_NOME
-    if SERVIDOR:
-        CFG["pastas"] = {"Downloads": os.path.join(BASE, "wavefly_downloads")}
-        CFG["atual"] = "Downloads"
     if CFG["atual"] not in CFG["pastas"]:
         CFG["atual"] = next(iter(CFG["pastas"]))
     try:
@@ -93,8 +86,6 @@ def _gravar(caminho, dados):
 
 
 def salvar_cfg():
-    if SERVIDOR:
-        return
     try:
         _gravar(CFG_FILE, CFG)
     except OSError:
@@ -2414,45 +2405,8 @@ def varrer_repetidas():
     return {"grupos": grupos}
 
 
-def criar_zip(rels):
-    arqs = []
-    for rel in list(rels)[:3000]:
-        p = caminho_seguro(rel)
-        if p and p.lower().endswith(EXTS) and os.path.isfile(p):
-            arqs.append((p, rel))
-    if not arqs:
-        raise ValueError("Nenhum arquivo para colocar no ZIP")
-    os.makedirs(ZIP_DIR, exist_ok=True)
-    agora = time.time()
-    for n in os.listdir(ZIP_DIR):
-        try:
-            f = os.path.join(ZIP_DIR, n)
-            if agora - os.path.getmtime(f) > 1800:
-                os.remove(f)
-        except OSError:
-            pass
-    tok = uuid.uuid4().hex
-    nome = "WaveFly-" + time.strftime("%Y%m%d-%H%M") + ".zip"
-    with zipfile.ZipFile(os.path.join(ZIP_DIR, tok + ".zip"), "w", zipfile.ZIP_STORED) as z:
-        for p, rel in arqs:
-            z.write(p, rel.replace(os.sep, "/"))
-    return {"url": "/api/zipdl?t=" + tok + "&n=" + quote_plus(nome), "nome": nome, "qtd": len(arqs)}
 
 
-def faxina():
-    while True:
-        time.sleep(600)
-        agora = time.time()
-        try:
-            for c in listar_mp3(raiz()):
-                if agora - _mtime(c) > HORAS_SERVIDOR * 3600:
-                    try:
-                        os.remove(c)
-                        limpar_pasta_vazia(c)
-                    except OSError:
-                        pass
-        except Exception:
-            pass
 
 
 def navegar(p):
@@ -2485,8 +2439,6 @@ def nova_pasta(pai, nome):
 
 
 def aplicar_cfg(d):
-    if SERVIDOR and any(k in d for k in ("atual", "usar_caminho", "add_pasta", "del_pasta")):
-        raise ValueError("No modo servidor a pasta é fixa")
     with LOCK:
         if "atual" in d:
             if d["atual"] not in CFG["pastas"]:
@@ -2538,7 +2490,7 @@ def pasta_ok():
 
 
 def cfg_publica():
-    return {"servidor": SERVIDOR, "res": CFG["res"], "primeira": PRIMEIRA, "pasta_ok": pasta_ok(), "android": ANDROID, "pastas": CFG["pastas"], "atual": CFG["atual"], "caminho": raiz(), "qualidade": CFG["qualidade"],
+    return {"res": CFG["res"], "primeira": PRIMEIRA, "pasta_ok": pasta_ok(), "android": ANDROID, "pastas": CFG["pastas"], "atual": CFG["atual"], "caminho": raiz(), "qualidade": CFG["qualidade"],
             "formato": CFG["formato"], "modo_playlist": CFG["modo_playlist"], "alt": CFG.get("alt", "manual"),
             "max_links": MAX_LINKS, "app": APP_NOME}
 
@@ -2610,14 +2562,6 @@ class H(BaseHTTPRequestHandler):
                 return self._json(navegar((q.get("p") or [""])[0]))
             if p == "/api/audio":
                 return self._audio((q.get("f") or [""])[0])
-            if p == "/api/baixar":
-                return self._audio((q.get("f") or [""])[0], anexo=True)
-            if p == "/api/zipdl":
-                t = (q.get("t") or [""])[0]
-                if not re.fullmatch(r"[0-9a-f]{32}", t):
-                    return self._json({"erro": "arquivo não encontrado"}, 404)
-                nome = re.sub(r"[^\w .-]", "", (q.get("n") or ["WaveFly.zip"])[0])[:60] or "WaveFly.zip"
-                return self._audio("", anexo=True, abs_path=os.path.join(ZIP_DIR, t + ".zip"), nome=nome)
             if p == "/api/aovivo":
                 vid_ = (q.get("id") or [""])[0]
                 return self._json({"live": ao_vivo(vid_), "dur": DURS.get(vid_, 0)})
@@ -2654,8 +2598,6 @@ class H(BaseHTTPRequestHandler):
             p = urlparse(self.path).path
             if p == "/api/add":
                 return self._json(adicionar(d.get("texto", ""), d.get("modo") or CFG["modo_playlist"], _pos(d.get("de")), _pos(d.get("ate")), d.get("listas")))
-            if p == "/api/zip":
-                return self._json(criar_zip(d.get("rels") or []))
             if p == "/api/acao":
                 return self._json(acao(d))
             if p == "/api/config":
@@ -2705,8 +2647,8 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(img[1])
 
-    def _audio(self, rel, anexo=False, abs_path=None, nome=None):
-        p = abs_path or caminho_seguro(rel)
+    def _audio(self, rel):
+        p = caminho_seguro(rel)
         if not p or not os.path.isfile(p):
             return self._json({"erro": "arquivo não encontrado"}, 404)
         tam = os.path.getsize(p)
@@ -2723,8 +2665,6 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", MIME.get(os.path.splitext(p)[1].lower(), "audio/mpeg"))
         self.send_header("Accept-Ranges", "bytes")
-        if anexo:
-            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(nome or os.path.basename(p)))
         self.send_header("Content-Length", str(max(0, fim - ini + 1)))
         if code == 206:
             self.send_header("Content-Range", f"bytes {ini}-{fim}/{tam}")
@@ -2803,11 +2743,11 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--sf2);padding:1px 
 .plf input{width:58px;min-height:34px;font:inherit;padding:4px 6px;border-radius:8px;border:1px solid var(--ln);background:var(--cd);color:var(--fg)}
 .bar{height:5px;background:var(--sf2);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--ac),var(--ac2));width:0;transition:width .3s;border-radius:5px}
 .sec{margin-top:24px}.aviso{margin:6px 0;padding:10px 12px;background:var(--acs);border-radius:10px;font-size:13px}
-.deliver{background:var(--cd);border:1px solid var(--ln);border-radius:14px;padding:12px 14px;margin:10px 0}.deliver .row{margin-top:8px;justify-content:stretch}.deliver button{flex:1}.deliver button.a{background:var(--ac);color:#fff;font-weight:600}
 
 
 
-.it{display:flex;gap:10px;align-items:center;padding:8px 0}.it .bd{flex:1;min-width:0}.tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}.tt.d{color:var(--mut)}
+
+.it{display:flex;gap:10px;align-items:center;padding:8px 0}.it .ac{flex:none;display:flex;align-items:center}.it.mx{flex-wrap:wrap}.it.mx .ac{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-end;gap:2px 6px}.it.mx .sm{white-space:normal;overflow-wrap:anywhere}.it .bd{flex:1;min-width:0}.tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}.tt.d{color:var(--mut)}
 .lh{display:flex;justify-content:space-between;align-items:center;margin:16px 0 4px;color:var(--mut);font-size:12.5px;font-weight:700}
 .lr{display:flex;align-items:center;gap:10px;padding:8px 0}.lr label{flex:1;min-width:0;display:flex;align-items:center;gap:10px;cursor:pointer}.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .srch{display:flex;gap:8px;margin-top:10px}.srch .ip{flex:1;position:relative}.srch input{padding-left:40px;padding-right:40px}
@@ -2880,7 +2820,7 @@ h1{font-size:34px;font-weight:800;letter-spacing:-.5px;margin-top:22px}
 .tabs a.on{background:var(--ac);color:var(--paper);box-shadow:0 3px 8px rgb(190 80 20 / .35)}
 .tabs a.on svg{animation:pop .4s ease}
 .cb{background:var(--ac2);color:var(--ink)}.tabs a.on .cb{background:var(--paper);color:var(--ac)}
-.chip,.plc,.pl-card,.deliver,#tray,.rb{background:var(--cd);border:1px solid var(--ln);border-radius:16px;box-shadow:var(--sh)}
+.chip,.plc,.pl-card,#tray,.rb{background:var(--cd);border:1px solid var(--ln);border-radius:16px;box-shadow:var(--sh)}
 .chip span{color:var(--at)}
 textarea,input[type=text],input[type=number]{background:var(--cd);border:1px solid var(--ln);border-radius:14px;box-shadow:inset 0 2px 4px rgb(0 0 0 / .06)}
 textarea:focus,input[type=text]:focus{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 25%,transparent)}
@@ -2973,7 +2913,7 @@ header{border-bottom:3px double var(--rk);margin-bottom:8px;padding-bottom:10px}
 .tabs{border:2.5px solid var(--rk);box-shadow:3px 3px 0 var(--rk)}
 .tabs a.on{background:var(--ac);color:#fbf3e1;box-shadow:inset 0 0 0 2px var(--rk)}
 h1::after{content:"";display:block;width:72px;height:7px;margin-top:8px;border-radius:4px;border:2px solid var(--rk);background:repeating-linear-gradient(90deg,var(--ac) 0 12px,var(--ac2) 12px 24px)}
-.chip,.plc,.pl-card,.deliver,#tray,.rb{border:2.5px solid var(--rk);border-radius:14px;box-shadow:3px 3px 0 var(--rk)}
+.chip,.plc,.pl-card,#tray,.rb{border:2.5px solid var(--rk);border-radius:14px;box-shadow:3px 3px 0 var(--rk)}
 .hello,.aviso{border:2px dashed var(--rk);border-radius:14px;box-shadow:none}
 .mb{border:3px solid var(--rk);box-shadow:5px 5px 0 var(--rk);border-radius:18px}
 .spn{border-top:3px solid var(--rk)}
@@ -3048,7 +2988,7 @@ header{display:flex!important;flex-direction:row!important;align-items:center!im
 h1,.wm{text-align:left!important}
 .sub{text-align:left!important}
 /* TUDO 3D - cards, listas, caixas */
-.lr,.pl-card,.it,.plc,.deliver,#tray,.rb,.mb,.hello,.aviso,.sg,.chip{box-shadow:0 5px 0 rgba(0,0,0,.35),0 10px 16px rgba(0,0,0,.3),inset 0 2px 0 rgba(255,255,255,.6)!important}
+.lr,.pl-card,.it,.plc,#tray,.rb,.mb,.hello,.aviso,.sg,.chip{box-shadow:0 5px 0 rgba(0,0,0,.35),0 10px 16px rgba(0,0,0,.3),inset 0 2px 0 rgba(255,255,255,.6)!important}
 .lr:active,.pl-card:active{transform:translateY(2px)!important;box-shadow:0 2px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.3)!important}
 /* PLAYER - estrutura */
 body #pl{padding:14px!important}
@@ -3065,7 +3005,7 @@ body #pl .ptx{flex:1!important;min-width:0!important}
   body #pl .tm,body #pl .time,body #pl small{color:#241a0e!important;font-weight:800!important;background:#f5eedb!important;padding:2px 8px!important;border-radius:99px!important;border:1px solid #6b5a35!important}
 }
 @media (prefers-color-scheme: dark){
-  .lr,.pl-card,.it,.plc,.deliver,#tray,.rb,.mb{box-shadow:0 5px 0 #000,0 10px 16px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,255,255,.22)!important}
+  .lr,.pl-card,.it,.plc,#tray,.rb,.mb{box-shadow:0 5px 0 #000,0 10px 16px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,255,255,.22)!important}
   /* PLAYER DARK - linha clara, bolinha dourada */
   body #pl .ptrack,body #pl #pfill-track,body #pl input[type=range],body #pl .bar,body #pl .pb{background:#d8c9a0!important;border:2px solid #a8936a!important;border-radius:99px!important;height:10px!important;box-shadow:inset 0 2px 4px rgba(0,0,0,.5)!important}
   body #pl #pfill,body #pl .pfill,body #pl .fill{background:#c99a3a!important;border-radius:99px!important;height:10px!important;box-shadow:none!important}
@@ -3147,7 +3087,6 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
     <div class="bar" style="margin:8px 0"><i id="fbar"></i></div>
     <div class="sm mut" id="fs"></div>
     <div class="aviso" id="fav" hidden></div>
-    <div class="deliver" id="entrega" hidden><b><span id="en">0</span> arquivo(s) pronto(s) para receber</b><div class="row"><button id="bsolto">Avulsos</button><button class="a" id="bzipq">Em ZIP</button></div></div>
     <div style="margin:4px -6px"><button class="t" id="bcanc">Cancelar tudo</button><button class="t" id="blimpa">Limpar concluídos</button></div>
     <div class="row" id="abasFila" style="margin:6px 0"><button class="t" data-aba="fila" id="abaFila">Fila</button><button class="t" data-aba="ok" id="abaOk">Concluídas</button></div><div id="lista"></div>
   </div>
@@ -3185,7 +3124,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
 <input type="file" id="edfile" accept="image/*" hidden>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
-<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bdl" hidden>Avulsos</button><button id="bzip" hidden>ZIP</button><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
+<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -3233,7 +3172,6 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div class="g" id="g-p"><span class="l">Salvar na Pasta</span><button class="rb js-pasta"><span>Pasta</span><span class="r"><b class="js-pnome">…</b><small class="js-pcam"></small></span></button></div>
   <div class="g"><span class="l">Organização de Playlists</span><div class="sg full" data-k="modo_playlist"><button data-v="pasta">Subpasta própria</button><button data-v="junto">Tudo na pasta principal</button></div></div>
   <div class="g"><span class="l">Vídeo fora do ar</span><div class="sg full" data-k="alt"><button data-v="manual">Perguntar</button><button data-v="auto">Alternativa automática</button></div></div>
-  <p class="note" id="srvnote" hidden>Modo servidor ativado: os arquivos expiram após algumas horas.</p>
 </div></div>
 
 <div class="fb" id="fb"><div class="w">
@@ -3279,7 +3217,7 @@ const cov=(rel,isVid,cls,icn)=>{const gen=!isVid&&!icn;let st='',ico=ic(icn||(is
 function covErr(im){const n=+(im.dataset.n||0);if(n>=3){im.style.display='none';return}im.dataset.n=n+1;
  if(!im.dataset.b)im.dataset.b=im.getAttribute('src');
  setTimeout(()=>{if(im.isConnected)im.src=im.dataset.b+'&r='+Date.now()},1500*(n+1))}
-let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,READY=[],LST=[],LR={dup:0,fora:0},PVN=5,PVT,QVN=5,ABAF='fila';
+let C={},LAST='',LIB={musicas:[],playlists:[],videos:[]},SEL=new Set(),RG=[],FB='',TM,TT,LST=[],LR={dup:0,fora:0},PVN=5,PVT,QVN=5,ABAF='fila';
 async function api(p,b){const r=await fetch(p,b===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'wavefly'},body:JSON.stringify(b)});const j=await r.json();if(!r.ok||j.erro)throw new Error(j.erro||('Erro '+r.status));return j}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(TT);TT=setTimeout(()=>t.classList.remove('on'),Math.min(4500,1700+m.length*28))}
 function conf(msg,ok){return new Promise(r=>{$('#mi').hidden=true;$('#mt').innerHTML=msg;$('#my').textContent=ok||'Confirmar';$('#md').classList.add('on');const f=v=>{$('#md').classList.remove('on');r(v)};$('#my').onclick=()=>f(true);$('#mn').onclick=()=>f(false)})}
@@ -3311,10 +3249,8 @@ function rcfg(){const f=C.formato;
  $$('.sg[data-k]').forEach(g=>segset(g,C[g.dataset.k]));
  $$('.js-fnote').forEach(e=>e.textContent=FN[f]||'');
  $('#g-r').hidden=f!=='video';
- let rs=f==='mp3'?`MP3`:f==='video'?`MP4 · ${C.res}p`:'Original';rs+=C.servidor?' · web':' · '+C.atual;
+ let rs=f==='mp3'?`MP3`:f==='video'?`MP4 · ${C.res}p`:'Original';rs+=' · '+C.atual;
  $$('.js-resumo').forEach(e=>e.textContent=rs);
- $('#g-p').hidden=!!C.servidor;$('#srvnote').hidden=!C.servidor;
- $('#bdel').hidden=!!C.servidor;$('#bdl').hidden=$('#bzip').hidden=!C.servidor;
  $('#warn').hidden=C.pasta_ok!==false;$('#warnand').hidden=!C.android;
  let seen='';try{seen=localStorage.getItem('wf_hello')}catch(e){}$('#hello').hidden=!(C.primeira&&!seen);const jk=C.atual+'|'+C.formato+'|'+C.caminho;if(jk!==JKEY){JKEY=jk;JA.clear();JAK.clear();Object.keys(PLP).forEach(k=>delete PLP[k]);if(LST.length)cnt()}ccount();updsel()}
 async function cfg(d){try{C=await api('/api/config',d);rcfg()}catch(e){toast(e.message)}}
@@ -3449,16 +3385,15 @@ function rowHTML(i){let sub='',cls='';
  if(i.status==='duplicada'||i.status==='cancelada'||i.status==='falha')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='pulada')a+=`<button class="t" data-a="forcar" data-id="${i.id}" style="color:var(--at);font-weight:600">Forçar</button>`;
  if(i.status==='falha')a+=`<button class="t" data-a="retentar" data-id="${i.id}">Tentar de novo</button>`;
- if(i.status==='falha'&&i.alt)a+=`<button class="t" data-a="alternativa" data-id="${i.id}" style="color:var(--at);font-weight:600">Tentar versão alternativa</button>`;
- if(i.status==='ok'&&i.arq&&C.servidor)a+=`<a class="t" style="color:var(--at);font-size:13.5px;padding:4px 6px" href="/api/baixar?f=${encodeURIComponent(i.arq)}" download>Receber</a>`;
+ if(i.status==='falha'&&i.alt)a+=`<button class="t" data-a="alternativa" data-id="${i.id}" style="color:var(--at);font-weight:600">Alternativa</button>`;
  a+=`<button class="t" data-a="remover" data-id="${i.id}">${i.status==='baixando'?'Cancelar':'Remover'}</button>`;
  const v=vidOf(i.url),th=v?`<img class="ft" loading="lazy" src="https://i.ytimg.com/vi/${v}/mqdefault.jpg" alt="">`:'<span class="ft"></span>';
- return `<div class="it" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div style="flex:none;display:flex;align-items:center">${a}</div></div>`}
+ const mx=['falha','duplicada','cancelada','pulada'].includes(i.status);
+ return `<div class="it${mx?' mx':''}" data-id="${i.id}">${th}<div class="bd"><div class="tt${i.status==='ok'?' d':''}">${esc((i.titulo&&!i.titulo.includes('http')?i.titulo:null)||(window.__TIT||{})[i.url]||(window.__TIT||{})[i.id]||((typeof TITS!=='undefined'&&TITS.get(vidOf(i.url))||{}).titulo)||(i.titulo||short(i.url)))}</div><div class="sm mut${cls}">${esc(sub)}</div>${i.status==='baixando'?`<div class="bar" style="margin-top:4px"><i style="width:${i.pct||0}%"></i></div>`:''}</div><div class="ac">${a}</div></div>`}
 const ORD={baixando:0,fila:1,falha:2,pulada:3,duplicada:3,cancelada:4,ok:5};
 function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada+(s.pulada||0),at=s.fila+s.baixando>0;
  if(s.ok!==LASTOK){const first=LASTOK<0;LASTOK=s.ok;if(!first){JA.clear();JAK.clear();if(LST.length)cnt();libAtual(1)}}
- document.title=(at?`${c}/${s.total} · `:'')+APPN;$('#fila').hidden=!s.total;if(!s.total){LAST='';READY=[];return}
- READY=s.itens.filter(i=>i.status==='ok'&&i.arq).map(i=>i.arq);$('#entrega').hidden=!(C.servidor&&READY.length);$('#en').textContent=READY.length;
+ document.title=(at?`${c}/${s.total} · `:'')+APPN;$('#fila').hidden=!s.total;if(!s.total){LAST='';return}
  $('#eq').classList.toggle('on',at);document.body.classList.toggle('baixando',at);$('#fh').textContent=at?'Baixando Fila':'Concluído';$('#fc').textContent=`${c} de ${s.total}`;$('#fbar').style.width=Math.round(c/s.total*100)+'%';
  const p=[];if(s.ok)p.push(s.ok+' concluídas');if(s.duplicada)p.push(s.duplicada+' duplicadas');if(s.pulada)p.push(s.pulada+' puladas');if(s.falha)p.push(s.falha+' falhas');
  p.push(fmt(s.dec));if(at&&c>0)p.push('faltam ~'+fmt(s.dec/c*(s.fila+s.baixando)));
@@ -3477,11 +3412,6 @@ $('#blimpa').onclick=async()=>{await api('/api/acao',{acao:'limpar'});tick()};
 $('#bcanc').onclick=async()=>{if(await conf('Cancelar <b>tudo</b> e interromper os downloads?','Cancelar tudo')){await api('/api/acao',{acao:'cancelar_tudo'});tick()}};
 async function tick(){clearTimeout(TM);try{draw(await api('/api/estado'))}catch(e){}TM=setTimeout(tick,document.hidden?4000:1000)}
 
-function receberSoltos(rels){if(!rels.length)return;toast(rels.length>1?`Baixando ${rels.length} arquivos...`:'Baixando...');
- rels.forEach((r,i)=>setTimeout(()=>{const a=document.createElement('a');a.href='/api/baixar?f='+encodeURIComponent(r);a.download='';document.body.appendChild(a);a.click();a.remove()},i*700))}
-async function receberZip(rels){if(!rels.length)return;try{toast('Compactando arquivos em ZIP...');const d=await api('/api/zip',{rels});const a=document.createElement('a');a.href=d.url;a.download=d.nome;document.body.appendChild(a);a.click();a.remove();toast(`ZIP pronto com ${d.qtd} arquivos`)}catch(e){toast(e.message)}}
-$('#bsolto').onclick=()=>receberSoltos(READY);$('#bzipq').onclick=()=>receberZip(READY);
-$('#bdl').onclick=()=>receberSoltos([...SEL]);$('#bzip').onclick=()=>receberZip([...SEL]);
 
 /* ---- editar título, artista e capa (MP3 e M4A) ---- */
 let EDREL='',EDCAPA='';
@@ -3523,7 +3453,7 @@ async function libAtual(forca){
    if(ACTIVE_PL)ACTIVE_PL=(d.playlists||[]).find(p=>p.nome===ACTIVE_PL.nome)||null;dlib()}}
  catch(e){}
  LIBBUSY=0}
-setInterval(()=>libAtual(0),6000);
+setInterval(()=>libAtual(0),10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();libAtual(1)}});window.addEventListener('focus',()=>tick());
 async function loadLib(){try{const d=await api('/api/arquivos'+(/^d/.test(LORD)?'?dur=1':''));LIB=d;LIBSIG=libSig(d);LIB.durok=/^d/.test(LORD);{const ok=new Set();[].concat(d.musicas||[],d.videos||[]).forEach(x=>ok.add(x.rel));(d.playlists||[]).forEach(p=>(p.itens||[]).forEach(x=>ok.add(x.rel)));[...SEL].forEach(r=>{if(!ok.has(r))SEL.delete(r)})}let sv=ACTIVE_PL?ACTIVE_PL.nome:'';if(!sv){try{sv=localStorage.getItem('wf_pl_aberta')||''}catch(e){}}ACTIVE_PL=sv?(d.playlists||[]).find(p=>p.nome===sv)||null:null;dlib()}catch(e){toast(e.message)}}
 function updbars(){
@@ -4058,7 +3988,7 @@ html body .wm .yt{font-size:.5em;font-weight:800;letter-spacing:.5px;padding:1px
 html body .mut,html body .sm,html body .sub,html body p.mut{color:var(--t-mu)!important}
 
 /* cartões e listas: borda fina e sombra suave */
-html body .lr,html body .pc,html body .pl-card,html body .rs,html body .tr,html body .chip,html body .plc,html body .deliver,html body #tray,html body .rb,html body .hello,html body .card,html body .cd{
+html body .lr,html body .pc,html body .pl-card,html body .rs,html body .tr,html body .chip,html body .plc,html body html body #tray,html body .rb,html body .hello,html body .card,html body .cd{
  background:linear-gradient(var(--t-s1),var(--t-s1))!important;border:1px solid var(--t-ln)!important;
  box-shadow:0 1px 2px rgba(0,0,0,.3)!important;color:var(--t-tx)!important}
 html body .hello{border-style:dashed!important}
@@ -4140,16 +4070,12 @@ html body .sg{background:var(--t-s2)!important;border:1px solid var(--t-ln)!impo
 
 
 def main():
-    global LIBERADO, SERVIDOR
+    global LIBERADO
     ap = argparse.ArgumentParser(description="WaveFly YT - baixador de músicas do YouTube")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8773)
-    ap.add_argument("--servidor", action="store_true")
     ap.add_argument("--no-browser", action="store_true")
     a = ap.parse_args()
-    SERVIDOR = a.servidor
-    if SERVIDOR and a.host == "127.0.0.1":
-        a.host = "0.0.0.0"
     LIBERADO = a.host not in ("127.0.0.1", "localhost")
     carregar_cfg()
     carregar_index()
@@ -4157,15 +4083,13 @@ def main():
     threading.Thread(target=trabalhador, daemon=True).start()
     for _k in (1, 2, 3, 4, 5):
         threading.Thread(target=trabalhador, args=(_k,), daemon=True).start()
-    if SERVIDOR:
-        threading.Thread(target=faxina, daemon=True).start()
     try:
         srv = ThreadingHTTPServer((a.host, a.port), H)
     except OSError as ex:
         sys.exit(f"Não consegui abrir a porta {a.port} ({ex}). Tente: python wavefly_yt.py --port 8800")
     url = f"http://localhost:{a.port}"
     print(f"\n🎵 {APP_NOME} rodando em {url}\n   Pasta atual: {raiz()}\n   (Ctrl+C para parar)\n")
-    if not ANDROID and not a.no_browser and not SERVIDOR:
+    if not ANDROID and not a.no_browser:
         threading.Timer(1, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()
