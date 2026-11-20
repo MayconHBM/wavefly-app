@@ -320,10 +320,13 @@ def rotas(w):
                         w.definir_pausa((q.get("v") or ["0"])[0] == "1")
                     if (q.get("falhas") or [""])[0] == "1":
                         w.acao({"acao": "tentar_falhas"})
+                    if (q.get("alts") or [""])[0] == "1":
+                        w.acao({"acao": "alt_falhas"})
                     with w.LOCK:
                         ativos = sum(1 for i in w.ITENS if i["status"] in ("fila", "baixando"))
                         falhas = sum(1 for i in w.ITENS if i["status"] == "falha")
-                    return self._json({"pausado": bool(w.PAUSA["on"]), "ativos": ativos, "falhas": falhas})
+                        alts = sum(1 for i in w.ITENS if i["status"] == "falha" and i.get("_podealt") and not i.get("_altv"))
+                    return self._json({"pausado": bool(w.PAUSA["on"]), "ativos": ativos, "falhas": falhas, "alts": alts})
                 if u.path == "/api/dev":
                     if (q.get("rapido") or [""])[0] in ("0", "1"):
                         w.definir_rapido((q.get("rapido") or ["0"])[0] == "1")
