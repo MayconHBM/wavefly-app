@@ -1556,9 +1556,6 @@ def _processar(it):
     # se o titulo novo vier vazio / generico, mantém o do preview
     if not titulo or titulo.strip() in ("", "sem título"):
         titulo = titulo_preview
-    if it.get("_altv") and titulo_preview:
-        titulo = titulo_preview            # versão alternativa: o arquivo mantém o nome da música pedida
-        base = re.sub(r'[\\/:*?"<>|]', "", titulo_preview).strip()[:80] or base
     if titulo:
         it["titulo"] = titulo
     if not base:
