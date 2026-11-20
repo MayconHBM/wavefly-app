@@ -1728,10 +1728,14 @@ def buscar_alternativa(it):
     return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
 
 
+ALT_SEM = threading.Semaphore(3)      # no máximo 3 buscas ao mesmo tempo (o celular não engasga)
+
+
 def tentar_alternativa(it, auto=False):
     """Troca o endereço pelo da versão alternativa e recoloca na fila. Se não achar, fica como falha."""
     try:
-        novo = buscar_alternativa(it)
+        with ALT_SEM:
+            novo = buscar_alternativa(it)
     except Exception:
         novo = None
     with LOCK:
@@ -3314,7 +3318,7 @@ function rcfg(){const f=C.formato;
  $('#warn').hidden=C.pasta_ok!==false;$('#warnand').hidden=!C.android;
  let seen='';try{seen=localStorage.getItem('wf_hello')}catch(e){}$('#hello').hidden=!(C.primeira&&!seen);const jk=C.atual+'|'+C.formato+'|'+C.caminho;if(jk!==JKEY){JKEY=jk;JA.clear();JAK.clear();Object.keys(PLP).forEach(k=>delete PLP[k]);if(LST.length)cnt()}ccount();updsel()}
 async function cfg(d){try{C=await api('/api/config',d);rcfg()}catch(e){toast(e.message)}}
-document.addEventListener('click',e=>{const b=e.target.closest('.sg[data-k] button');if(!b)return;const k=b.parentElement.dataset.k;let v=b.dataset.v;if(k==='res')v=+v;cfg({[k]:v})});
+document.addEventListener('click',e=>{const b=e.target.closest('.sg[data-k] button');if(!b)return;const k=b.parentElement.dataset.k;let v=b.dataset.v;if(k==='res')v=+v;segset(b.parentElement,v);cfg({[k]:v})});
 $('#hok').onclick=()=>{try{localStorage.setItem('wf_hello','1')}catch(e){}$('#hello').hidden=true};
 $('#hchg').onclick=()=>{$('#hok').click();fbabrir()};
 
@@ -3468,7 +3472,7 @@ function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada+(s.pulada||0),at=s
  const it2=ABAF==='ok'?it.filter(x=>x.status==='ok'):it.filter(x=>x.status!=='ok');
  $('#lista').innerHTML=it2.slice(0,QVN).map(rowHTML).join('')+(it2.length>QVN?`<button class="t" data-q="mais" style="margin:8px 0">Ver mais 5 (${it2.length-QVN} restantes)</button>`:'')+(QVN>5?`<button class="t" data-q="menos" style="margin:8px 0 8px 6px">Recolher</button>`:'')}
 $('#abasFila').onclick=e=>{const b=e.target.closest('button[data-aba]');if(!b)return;ABAF=b.dataset.aba;QVN=5;LAST='';tick()};
-$('#lista').onclick=async e=>{const q=e.target.closest('button[data-q]');if(q){if(q.dataset.q==='mais')QVN+=5;else QVN=5;LAST='';return tick()}const b=e.target.closest('button[data-a]');if(!b)return;try{await api('/api/acao',{acao:b.dataset.a,id:+b.dataset.id});tick()}catch(x){toast(x.message)}};
+$('#lista').onclick=async e=>{const q=e.target.closest('button[data-q]');if(q){if(q.dataset.q==='mais')QVN+=5;else QVN=5;LAST='';return tick()}const b=e.target.closest('button[data-a]');if(!b)return;if(b.dataset.a==='alternativa'){b.disabled=true;b.textContent=T('Procurando alternativa…')}try{await api('/api/acao',{acao:b.dataset.a,id:+b.dataset.id});tick()}catch(x){toast(x.message)}};
 $('#blimpa').onclick=async()=>{await api('/api/acao',{acao:'limpar'});tick()};
 $('#bcanc').onclick=async()=>{if(await conf('Cancelar <b>tudo</b> e interromper os downloads?','Cancelar tudo')){await api('/api/acao',{acao:'cancelar_tudo'});tick()}};
 async function tick(){clearTimeout(TM);try{draw(await api('/api/estado'))}catch(e){}TM=setTimeout(tick,document.hidden?4000:1000)}
