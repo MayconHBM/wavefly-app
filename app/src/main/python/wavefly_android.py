@@ -341,8 +341,10 @@ def rotas(w):
                         w.definir_longas(int(q["longas"][0]))
                     if (q.get("limpar") or [""])[0]:
                         with w.DEV_LOCK:
-                            w.DEV["log"].clear()
-                            w.DEV["medidas"].clear()
+                            for k in ("log", "medidas", "falhas_det", "trocadas", "lotes"):
+                                w.DEV[k] = []
+                            w.DEV["ok"] = w.DEV["falha"] = 0
+                        w._salvar_log()
                     return self._json(w.dev_estado())
                 import app_entry
                 res = ""

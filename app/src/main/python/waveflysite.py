@@ -23,6 +23,8 @@ except ImportError:
 BASE = os.environ.get("WAVEFLY_DATA") or os.path.dirname(os.path.abspath(__file__))
 CFG_FILE = os.path.join(BASE, "wavefly_config.json")
 FILA_FILE = os.path.join(BASE, "wavefly_fila.json")
+LOG_FILE = os.path.join(BASE, "wavefly_log.json")      # pasta privada do app: não aparece nos gerenciadores de arquivos
+VIVO_FILE = os.path.join(BASE, "wavefly_vivo.txt")
 INDEX_FILE = os.path.join(BASE, "wavefly_index.json")
 PRIMEIRA = False
 LOCK = threading.RLock()
@@ -1016,6 +1018,8 @@ def amigavel(erro):
     if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "copyright")):
         return "Bloqueado por direitos autorais ou pela região."
     if "confirm your age" in e or "age-restrict" in e:
+        if sync_cookies():
+            return "Restrição de idade: a conta do YouTube entrou, mas não teve acesso. Confirme a idade nela."
         return "Restrição de idade: precisa entrar com a conta do YouTube (Ajustes)."
     if any(x in e for x in ("unsupported url", "extractor", "not a valid url", "no suitable", "is not a valid", "invalid url")):
         return "Link não reconhecido. Confira se ele está correto."
@@ -1256,7 +1260,63 @@ CONV = Limite(4)   # modo rápido: quantas conversões ao mesmo tempo
 def dev_log(tipo, msg):
     with DEV_LOCK:
         DEV["log"].append({"t": time.strftime("%H:%M:%S"), "tipo": tipo, "msg": str(msg)[:400]})
-        del DEV["log"][:-200]
+        del DEV["log"][:-1500]
+        DEV["_sujo"] = True
+
+
+_LOG_CHAVES = ("log", "medidas", "ok", "falha", "falhas_det", "trocadas", "lotes")
+
+
+def _salvar_log():
+    with DEV_LOCK:
+        dados = {k: DEV.get(k) for k in _LOG_CHAVES}
+        DEV["_sujo"] = False
+    try:
+        _gravar(LOG_FILE, dados)
+    except Exception:
+        pass
+
+
+def _carregar_log():
+    """Volta o registro de antes de o app reiniciar (ele só some quando você toca em Limpar)."""
+    try:
+        with open(LOG_FILE, encoding="utf-8") as f:
+            dados = json.load(f)
+        with DEV_LOCK:
+            for k in _LOG_CHAVES:
+                if k in dados and isinstance(dados[k], type(DEV.get(k))):
+                    DEV[k] = dados[k]
+    except Exception:
+        pass
+    try:
+        with open(VIVO_FILE, encoding="utf-8") as f:
+            ult = float(f.read().strip() or 0)
+    except Exception:
+        ult = 0
+    if ult:
+        dev_log("app", "App iniciado. Última atividade antes disso: %s (há %d min). Se você não fechou o app, o Android pode tê-lo encerrado."
+                % (time.strftime("%d/%m %H:%M:%S", time.localtime(ult)), max(0, int((time.time() - ult) // 60))))
+    else:
+        dev_log("app", "App iniciado.")
+
+
+def _loop_log():
+    n = 0
+    while True:
+        time.sleep(10)
+        n += 1
+        try:
+            if DEV.get("_sujo"):
+                _salvar_log()
+            if n % 3 == 0:
+                with open(VIVO_FILE, "w", encoding="utf-8") as f:
+                    f.write(str(time.time()))
+        except Exception:
+            pass
+
+
+_carregar_log()
+threading.Thread(target=_loop_log, daemon=True).start()
 
 
 def rapido_ligado():
@@ -1763,6 +1823,15 @@ def tratar_falha(it, erro):
     if bloqueio:
         acionar_freio("YouTube pediu confirmação (bloqueio)")
         DEV["esfriar"] = time.time() + 240
+    idade = "confirm your age" in e or "age-restrict" in e or bool(re.search(r"\bage\b", e) and "restrict" in e)
+    if idade and not it.get("_idade") and sync_cookies():
+        it["_idade"] = True                      # logado: tenta uma vez com a conta antes de desistir
+        it["_cook"] = True
+        it["_nao_antes"] = 0
+        with LOCK:
+            it.update(status="fila", pct=0, vel="Restrição de idade: tentando com a sua conta", erro="")
+        dev_log("idade", "%s: tentando com a conta do YouTube" % nome)
+        return False
     permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
@@ -3211,7 +3280,7 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 <label class="sm mut">Capa</label><div style="display:flex;gap:12px;align-items:center;margin:6px 0 12px"><img id="edimg" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:var(--sf)"><div style="display:flex;flex-direction:column;gap:8px"><button class="t" id="edescolhe">Escolher imagem</button><button class="t" id="edremove">Remover capa</button></div></div>
 <input type="file" id="edfile" accept="image/*" hidden>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button class="t" id="edcancela">Cancelar</button><button id="edsalva" class="pri">Salvar</button></div></div></div>
-<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
+<div class="sel" id="libbar" hidden><div class="lbtop"><span id="selc"></span><span class="lblk"><button id="bsa">Selecionar tudo</button><button id="bsl">Limpar</button></span></div><div class="lbact"><button id="bconv" hidden>Converter p/ MP3</button><button id="bedit" hidden>Editar</button><button id="brn" hidden>Renomear</button><button id="bmv" hidden>Mover / Copiar</button><button id="bdel">Apagar</button></div></div>
 <div class="sel" id="repbar" hidden><span id="repc"></span><button id="brdel">Apagar marcadas</button></div>
 
 <div id="pl" class="aud" data-st="stop" hidden>
@@ -3507,7 +3576,7 @@ function draw(s){const c=s.ok+s.duplicada+s.falha+s.cancelada+(s.pulada||0),at=s
  const it2=ABAF==='ok'?it.filter(x=>x.status==='ok'):it.filter(x=>x.status!=='ok');
  $('#lista').innerHTML=it2.slice(0,QVN).map(rowHTML).join('')+(it2.length>QVN?`<button class="t" data-q="mais" style="margin:8px 0">Ver mais 5 (${it2.length-QVN} restantes)</button>`:'')+(QVN>5?`<button class="t" data-q="menos" style="margin:8px 0 8px 6px">Recolher</button>`:'')}
 $('#abasFila').onclick=e=>{const b=e.target.closest('button[data-aba]');if(!b)return;ABAF=b.dataset.aba;QVN=5;LAST='';tick()};
-$('#lista').onclick=async e=>{const q=e.target.closest('button[data-q]');if(q){if(q.dataset.q==='mais')QVN+=5;else QVN=5;LAST='';return tick()}const b=e.target.closest('button[data-a]');if(!b)return;if(b.dataset.a==='alternativa'){b.disabled=true;b.textContent=T('Procurando alternativa…')}try{await api('/api/acao',{acao:b.dataset.a,id:+b.dataset.id});tick()}catch(x){toast(x.message)}};
+$('#lista').onclick=async e=>{const q=e.target.closest('button[data-q]');if(q){if(q.dataset.q==='mais')QVN+=5;else QVN=5;LAST='';return tick()}const b=e.target.closest('button[data-a]');if(!b)return;if(b.dataset.a==='alternativa'){b.disabled=true;b.textContent='Procurando alternativa…'}try{await api('/api/acao',{acao:b.dataset.a,id:+b.dataset.id});tick()}catch(x){toast(x.message)}};
 $('#blimpa').onclick=async()=>{await api('/api/acao',{acao:'limpar'});tick()};
 $('#bcanc').onclick=async()=>{if(await conf('Cancelar <b>tudo</b> e interromper os downloads?','Cancelar tudo')){await api('/api/acao',{acao:'cancelar_tudo'});tick()}};
 async function tick(){clearTimeout(TM);try{draw(await api('/api/estado'))}catch(e){}TM=setTimeout(tick,document.hidden?4000:1000)}
@@ -3561,7 +3630,7 @@ function updbars(){
  $('#libbar').hidden=off||rep||!SEL.size;
  $('#bsa').hidden=!selTudo().some(r=>!SEL.has(r));
  const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=SEL.size-nP;
- $('#bedit').hidden=SEL.size!==1||nP>0;$('#bmv').hidden=!SEL.size||nP>0;$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
+ $('#bedit').hidden=SEL.size!==1||nP>0;$('#bmv').hidden=!SEL.size||nP>0;$('#brn').hidden=!(nP===1&&nF===0);$('#bconv').hidden=![...SEL].some(r=>/\.(mp4|mkv)$/i.test(r));
  $('#selc').textContent=!SEL.size?'':nP?(nP+(nP>1?' pastas':' pasta')+(nF?' · '+nF+(nF>1?' arquivos':' arquivo'):'')):(SEL.size+(SEL.size>1?' selecionados':' selecionado'));
  $('#repbar').hidden=off||!rep||!n;$('#repc').textContent=n+(n>1?' marcadas':' marcada')
 }
@@ -3586,12 +3655,13 @@ $('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('
 const nz=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const ehVid=r=>/\.(mp4|mkv)$/i.test(r);
 let NPLM='novo';
-function nplAbre(m){NPLM=m;$('#nplT').textContent=T(m==='ren'?'Renomear playlist':'Nova playlist');$('#nplS').textContent=T(m==='ren'?'Salvar':'Criar');
- $('#nplI').value=m==='ren'&&ACTIVE_PL?ACTIVE_PL.nome:'';$('#npl').classList.add('on');setTimeout(()=>$('#nplI').focus(),150)}
+let NPLALVO='';
+function nplAbre(m,alvo){NPLM=m;NPLALVO=alvo||(ACTIVE_PL?ACTIVE_PL.nome:'');$('#nplT').textContent=m==='ren'?'Renomear playlist':'Nova playlist';$('#nplS').textContent=m==='ren'?'Salvar':'Criar';
+ $('#nplI').value=m==='ren'?NPLALVO:'';$('#npl').classList.add('on');setTimeout(()=>$('#nplI').focus(),150)}
 function nplFecha(){$('#npl').classList.remove('on')}
 async function nplOk(){const v=$('#nplI').value.trim();if(!v)return;const b=$('#nplS');b.disabled=true;
- try{if(NPLM==='ren'&&ACTIVE_PL){const r=await api('/api/renomear_pl',{nome:ACTIVE_PL.nome,novo:v});nplFecha();await loadLib();ACTIVE_PL=(LIB.playlists||[]).find(p=>p.nome===r.nome)||null;toast(T('Playlist renomeada'))}
-  else{const r=await api('/api/nova_playlist',{nome:v});nplFecha();await loadLib();toast(T('Playlist criada'))}
+ try{if(NPLM==='ren'&&NPLALVO){const r=await api('/api/renomear_pl',{nome:NPLALVO,novo:v});nplFecha();SEL.clear();await loadLib();if(ACTIVE_PL)ACTIVE_PL=(LIB.playlists||[]).find(p=>p.nome===r.nome)||null;toast('Playlist renomeada')}
+  else{const r=await api('/api/nova_playlist',{nome:v});nplFecha();await loadLib();toast('Playlist criada')}
   dlib()}catch(e){toast(e.message)}b.disabled=false}
 function dlib(){
  const emPL=!!(LIBVIEW==='pls'&&ACTIVE_PL);
@@ -3780,7 +3850,7 @@ async function mvFaz(dest){
   SEL.clear();$('#mvs').classList.remove('on');await loadLib();
   toast([r.ok+(copiar?' copiadas':' movidas')].concat(r.pulou?[r.pulou+' ignoradas'] :[]).concat(r.falhas&&r.falhas.length?[r.falhas.length+' falhas']:[]).join(' · '))
  }catch(e){toast(e.message)}}
-$('#bmv').onclick=mvAbre;$('#mvx').onclick=()=>$('#mvs').classList.remove('on');
+$('#brn').onclick=()=>{const r=[...SEL].find(x=>x.startsWith('pasta:'));if(r)nplAbre('ren',r.slice(6))};$('#bmv').onclick=mvAbre;$('#mvx').onclick=()=>$('#mvs').classList.remove('on');
 $('#nplC').onclick=nplFecha;$('#nplS').onclick=nplOk;$('#nplI').onkeydown=e=>{if(e.key==='Enter')nplOk()};$('#npl').addEventListener('click',e=>{if(e.target.id==='npl')nplFecha()});
 $('#mvs').onclick=e=>{if(e.target.id==='mvs')$('#mvs').classList.remove('on')};
 $('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return;MVMODO=b.dataset.v;segset('mvmodo',MVMODO)};

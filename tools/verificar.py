@@ -45,6 +45,9 @@ if not m:
 else:
     scripts = re.findall(r"<script>(.*?)</script>", m.group(1), re.S)
     checa_js("tela principal", max(scripts, key=len))
+    # a função de tradução T() só existe na camada de interface; chamá-la na tela principal quebra o botão em silêncio
+    if re.search(r"(?<![\w.$])T\(", max(scripts, key=len)):
+        falha("a tela principal chama T(), que não existe lá (use texto em português puro)")
 for n in ast.parse(fontes["wavefly_ui.py"]).body:
     v = getattr(getattr(n, "value", None), "value", None)
     if isinstance(n, ast.Assign) and isinstance(v, str) and "<script" in v and "</script>" in v:

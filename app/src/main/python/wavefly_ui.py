@@ -25,6 +25,8 @@ DICT = [
     ("Depois disso, o app baixa sem login.", "After that, the app downloads without signing in.", "Después, la app descarga sin iniciar sesión."),
     ("Sair", "Sign out", "Salir"),
     ("Nova playlist", "New playlist", "Nueva lista"),
+    ("Restrição de idade: a conta do YouTube entrou, mas não teve acesso. Confirme a idade nela.", "Age restriction: the YouTube account is signed in but had no access. Confirm the age on it.", "Restricción de edad: la cuenta de YouTube entró, pero no tuvo acceso. Confirma la edad en ella."),
+    ("Restrição de idade: tentando com a sua conta", "Age restriction: trying with your account", "Restricción de edad: probando con tu cuenta"),
     ("Renomear", "Rename", "Renombrar"),
     ("Renomear playlist", "Rename playlist", "Renombrar lista"),
     ("Salvar", "Save", "Guardar"),
