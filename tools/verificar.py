@@ -66,7 +66,10 @@ stub.YoutubeDL = _Y
 utils = types.ModuleType("yt_dlp.utils"); utils.DownloadError = Exception
 stub.utils = utils
 sys.modules.setdefault("yt_dlp", stub); sys.modules.setdefault("yt_dlp.utils", utils)
-sys.path.insert(0, PY)
+import shutil
+_COPIA = os.path.join(tempfile.mkdtemp(), "py")      # roda numa cópia: o teste grava arquivos e não pode sujar o repositório
+shutil.copytree(PY, _COPIA)
+sys.path.insert(0, _COPIA)
 os.environ.setdefault("WAVEFLY_DATA", tempfile.mkdtemp())
 try:
     import waveflysite as w
