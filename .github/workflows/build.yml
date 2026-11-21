@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Conferir o código (se falhar, nada é publicado)
+        run: python tools/verificar.py
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'

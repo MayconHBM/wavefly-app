@@ -269,47 +269,6 @@ def sync_cookies():
     return bool(p and os.path.exists(p) and os.path.getsize(p) > 50)
 
 
-LOGIN_EMAIL = {"chave": None, "email": "", "busca": False}
-
-
-def _buscar_email():
-    """Descobre o e-mail da conta entrada (usa só o login já salvo neste aparelho; fica só na memória)."""
-    import http.cookiejar
-    try:
-        cj = http.cookiejar.MozillaCookieJar(arq_cookies())
-        cj.load(ignore_discard=True, ignore_expires=True)
-        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-        req = urllib.request.Request("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard",
-                                     headers={"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"})
-        txt = op.open(req, timeout=10).read().decode("utf-8", "ignore")
-        m = re.search(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", txt)
-        return m.group(0) if m else ""
-    except Exception:
-        return ""
-
-
-def email_login():
-    """E-mail da conta (do cache). Se ainda não tem, busca em segundo plano e responde '' por enquanto."""
-    if not sync_cookies():
-        LOGIN_EMAIL.update(chave=None, email="")
-        return ""
-    try:
-        st = os.stat(arq_cookies())
-        chave = (st.st_mtime, st.st_size)
-    except OSError:
-        return ""
-    if LOGIN_EMAIL["chave"] == chave:
-        return LOGIN_EMAIL["email"]
-    if not LOGIN_EMAIL["busca"]:
-        LOGIN_EMAIL["busca"] = True
-
-        def _t():
-            e = _buscar_email()
-            LOGIN_EMAIL.update(chave=chave, email=e, busca=False)
-        threading.Thread(target=_t, daemon=True).start()
-    return ""
-
-
 def obter_info(url, alt=0, cook=False):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
     base_opts = dict(OPTS, cookiefile=arq_cookies()) if (cook and sync_cookies()) else OPTS
@@ -1523,7 +1482,7 @@ def dev_estado():
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
-            "falhas_det": list(DEV["falhas_det"][-25:]), "lotes": list(DEV["lotes"][-5:]),
+            "falhas_det": list(DEV["falhas_det"][-25:]), "trocadas": list(DEV.get("trocadas", [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
             "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
             "fila_int": fila_interna()}
@@ -1775,6 +1734,10 @@ def tentar_alternativa(it, auto=False):
             it.update(status="falha", vel="", _podealt=False)
             if not auto:
                 it["erro"] = "Não achei uma versão alternativa parecida."
+    if novo:
+        with DEV_LOCK:
+            DEV.setdefault("trocadas", []).append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": it.get("_altv", ""), "para": novo})
+            del DEV["trocadas"][:-300]
     dev_log("alternativa", "%s: %s" % ((it.get("titulo") or "")[:60], novo or "nenhuma"))
     salvar_fila()
     return bool(novo)
@@ -2192,14 +2155,20 @@ def lista_biblioteca(com_dur=False):
             else:
                 out["musicas"].append(item)
 
+    try:                                   # playlists vazias (pastas sem nenhuma música ainda)
+        for d in os.listdir(r):
+            if not d.startswith(".") and d not in playlists_map and os.path.isdir(os.path.join(r, d)):
+                playlists_map[d] = []
+    except OSError:
+        pass
     pl_formatadas = []
     for pl_nome, itens in playlists_map.items():
         tem_mp4 = any(i["rel"].lower().endswith(VIDEO_EXTS) for i in itens)
         pl_formatadas.append({
             "nome": pl_nome,
             "total": len(itens),
-            "primeira_musica": itens[0]["nome"],
-            "primeira_rel": itens[0]["rel"],
+            "primeira_musica": itens[0]["nome"] if itens else "",
+            "primeira_rel": itens[0]["rel"] if itens else "",
             "tem_mp4": tem_mp4,
             "itens": itens
         })
@@ -2220,6 +2189,82 @@ def _dir_destino(destino, criar):
     if criar:
         os.makedirs(dest, exist_ok=True)
     return dest
+
+
+def _nome_pl_ok(nome):
+    nome = (nome or "").strip()
+    if not nome or nome.startswith(".") or nome in (".", "..") or any(c in nome for c in '/\\:*?"<>|') or len(nome) > 80:
+        raise ValueError("Nome de playlist inválido")
+    return nome
+
+
+def nova_playlist(nome):
+    nome = _nome_pl_ok(nome)
+    d = _dir_destino(nome, False)
+    if os.path.exists(d):
+        raise ValueError("Já existe uma playlist com esse nome")
+    os.makedirs(d)
+    return {"ok": True, "nome": nome}
+
+
+def _trocar_prefixo(velho, novo):
+    """Depois de renomear uma pasta, o registro de vídeos baixados aponta para o caminho novo (uma gravação só)."""
+    rv = os.path.realpath(velho)
+
+    def tr(x):
+        rx = os.path.realpath(x)
+        return novo + rx[len(rv):] if rx.startswith(rv + os.sep) else x
+    with LOCK:
+        for d in INDEX.values():
+            for k, v in list(d.items()):
+                if isinstance(v, str):
+                    d[k] = tr(v)
+                elif isinstance(v, list):
+                    d[k] = [tr(x) if isinstance(x, str) else x for x in v]
+        REV.clear()
+        try:
+            _gravar(INDEX_FILE, INDEX)
+        except OSError:
+            pass
+
+
+def renomear_playlist(nome, novo):
+    novo = _nome_pl_ok(novo)
+    velho = _dir_destino(_nome_pl_ok(nome), False)
+    r = os.path.realpath(raiz())
+    if velho == r or not os.path.isdir(velho):
+        raise ValueError("Playlist não encontrada")
+    nw = _dir_destino(novo, False)
+    if os.path.exists(nw) and os.path.realpath(nw) != os.path.realpath(velho):
+        raise ValueError("Já existe uma playlist com esse nome")
+    with LOCK:
+        if any(i["status"] in ("fila", "baixando") and i.get("sub") == nome for i in ITENS):
+            raise ValueError("Há downloads nesta playlist. Espere terminar para renomear.")
+    arqs = []
+    for raiz_, _d, fs in os.walk(velho):
+        arqs += [os.path.join(raiz_, f) for f in fs]
+    os.rename(velho, nw)
+    for f in arqs:
+        novo_f = nw + f[len(velho):]
+        try:
+            c_old, c_new = _cache_capa(f), _cache_capa(novo_f)
+            if c_old != c_new and os.path.exists(c_old):
+                os.replace(c_old, c_new)
+        except OSError:
+            pass
+        if os.path.realpath(f) in SEM_CAPA or f in SEM_CAPA:
+            SEM_CAPA.discard(f)
+            SEM_CAPA.add(os.path.realpath(novo_f))
+    _salvar_sem_capa()
+    _trocar_prefixo(velho, nw)
+    with LOCK:
+        for i in ITENS:
+            if i.get("sub") == nome:
+                i["sub"] = novo
+            if i.get("destino") and os.path.realpath(i["destino"]) == velho:
+                i["destino"] = nw
+    salvar_fila()
+    return {"ok": True, "nome": novo}
 
 
 def conflitos_mover(rels, destino):
@@ -2567,7 +2612,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/icon.svg":
                 return self._bytes(ICON.encode(), "image/svg+xml")
             if p == "/api/login":
-                return self._json({"logado": sync_cookies(), "email": email_login()})
+                return self._json({"logado": sync_cookies()})
             if p == "/api/estado":
                 return self._json(estado())
             if p == "/api/config":
@@ -2642,6 +2687,10 @@ class H(BaseHTTPRequestHandler):
                 return self._json(aplicar_cfg(d))
             if p == "/api/apagar":
                 return self._json(apagar(d.get("rels") or []))
+            if p == "/api/nova_playlist":
+                return self._json(nova_playlist(d.get("nome", "")))
+            if p == "/api/renomear_pl":
+                return self._json(renomear_playlist(d.get("nome", ""), d.get("novo", "")))
             if p == "/api/mover_checar":
                 return self._json(conflitos_mover(d.get("rels") or [], d.get("destino", "")))
             if p == "/api/mover":
@@ -3189,11 +3238,16 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="mvnew" placeholder="Nova playlist…" maxlength="80" style="flex:1"><button class="t" id="mvgo" style="color:var(--at);font-weight:600">Criar</button></div>
 </div></div>
 
-<div class="sheet" id="lgo"><div class="spn">
+<div class="sheet" id="npl" style="z-index:80"><div class="spn">
+  <div class="grip"></div>
+  <b id="nplT" style="font-size:18px;display:block">Nova playlist</b>
+  <input type="text" id="nplI" maxlength="80" placeholder="Digite o nome da playlist" autocomplete="off" style="width:100%;margin:12px 0;box-sizing:border-box">
+  <div style="display:flex;gap:8px"><button id="nplC" style="flex:1">Cancelar</button><button id="nplS" style="flex:1">Criar</button></div>
+</div></div>
+<div class="sheet" id="lgo" style="z-index:80"><div class="spn">
   <div class="grip"></div>
   <b style="font-size:18px;display:block">Sair da conta?</b>
   <p class="sm" id="lgoN" style="margin:8px 0 4px">Você vai sair da conta do YouTube neste aparelho.</p>
-  <div id="lgoE" class="sm" style="margin:0 0 6px;word-break:break-all;color:var(--fg);font-weight:600" hidden></div>
   <p class="sm mut" style="margin:4px 0 12px">Depois disso, o app baixa sem login.</p>
   <div style="display:flex;gap:8px"><button id="lgoC" style="flex:1">Cancelar</button><button id="lgoS" style="flex:1">Sair</button></div>
 </div></div>
@@ -3424,7 +3478,7 @@ function rowHTML(i){let sub='',cls='';
  else if(i.status==='falha'){sub='Falhou: '+(i.erro||'erro');cls=' er'}
  else if(i.status==='duplicada')sub='Já existe na pasta (será ignorado)';
  else if(i.status==='pulada')sub=i.erro||'Pulada';
- else if(i.status==='ok')sub='Concluído';
+ else if(i.status==='ok')sub=i.altv?'Concluído · versão alternativa':'Concluído';
  else if(i.status==='cancelada')sub='Cancelada';
  else sub=(i.sub&&!/lendo nome/i.test(i.sub))?'Na fila · '+i.sub:'Na fila';
  let a='';
@@ -3531,6 +3585,14 @@ $('#lsort').value=LORD;
 $('#lsort').onchange=async()=>{LORD=$('#lsort').value;try{localStorage.setItem('wf_ord',LORD)}catch(e){}if(/^d/.test(LORD)&&!LIB.durok)await loadLib();else dlib()};
 const nz=t=>(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 const ehVid=r=>/\.(mp4|mkv)$/i.test(r);
+let NPLM='novo';
+function nplAbre(m){NPLM=m;$('#nplT').textContent=T(m==='ren'?'Renomear playlist':'Nova playlist');$('#nplS').textContent=T(m==='ren'?'Salvar':'Criar');
+ $('#nplI').value=m==='ren'&&ACTIVE_PL?ACTIVE_PL.nome:'';$('#npl').classList.add('on');setTimeout(()=>$('#nplI').focus(),150)}
+function nplFecha(){$('#npl').classList.remove('on')}
+async function nplOk(){const v=$('#nplI').value.trim();if(!v)return;const b=$('#nplS');b.disabled=true;
+ try{if(NPLM==='ren'&&ACTIVE_PL){const r=await api('/api/renomear_pl',{nome:ACTIVE_PL.nome,novo:v});nplFecha();await loadLib();ACTIVE_PL=(LIB.playlists||[]).find(p=>p.nome===r.nome)||null;toast(T('Playlist renomeada'))}
+  else{const r=await api('/api/nova_playlist',{nome:v});nplFecha();await loadLib();toast(T('Playlist criada'))}
+  dlib()}catch(e){toast(e.message)}b.disabled=false}
 function dlib(){
  const emPL=!!(LIBVIEW==='pls'&&ACTIVE_PL);
  $('#wrapvid').hidden=!(emPL&&ACTIVE_PL.tem_mp4);$('#chkvid').checked=PL_FILTRO_VID;
@@ -3546,7 +3608,7 @@ function dlib(){
  let hPls = '';
  const linha=x=>`<div class="lr"><label><input type="checkbox" data-rel="${esc(x.rel)}" ${SEL.has(x.rel)?'checked':''}>${cov(x.rel, false)}<span class="nm">${esc(x.nome)}</span></label><span class="sm mut">${tamf(x.tam)}</span><button class="t" data-playrel="${esc(x.rel)}">Ouvir</button></div>`;
  if(emPL){
-  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow"><button data-shuf="lista">Tocar em aleatório</button></div>` +
+  hPls = `<button class="t" id="bvoltapl" style="margin:2px 0 8px">‹ Voltar às pastas</button><h2>${esc(ACTIVE_PL.nome)}</h2><div class="sm mut" style="margin-bottom:8px">${ACTIVE_PL.total} arquivos${ACTIVE_PL.tem_mp4?' · <span style="color:#ffb74d;font-weight:600">Contém vídeo</span>':''}</div><div class="shufrow">${ACTIVE_PL.total?'<button data-shuf="lista">Tocar em aleatório</button>':''}<button data-npl="ren">Renomear</button></div>` +
    (LIBQ=(PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).map(x=>x.rel),
     (PL_FILTRO_VID ? [...ITP].sort((a,b)=>((/\.(mp4|mkv)$/i.test(a.rel)) - (/\.(mp4|mkv)$/i.test(b.rel)))) : ITP.filter(x=>!/\.(mp4|mkv)$/i.test(x.rel))).slice(0,LIBN)).map(x=>{
     const isVid = x.rel.toLowerCase().endsWith('.mp4') || x.rel.toLowerCase().endsWith('.mkv');
@@ -3555,15 +3617,16 @@ function dlib(){
  } else if(LIBVIEW==='pls'){
   LIBQ=[];
   LIBPLS=pls.flatMap(p=>nz(p.nome).includes(f)?(p.itens||[]):(p.itens||[]).filter(x=>nz(x.nome).includes(f))).map(x=>x.rel).filter(r=>!ehVid(r));
-  hPls = (pls.length?`<div class="shufrow"><button data-shuf="pls">Tocar todas em aleatório</button></div>`:'') + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${cov(p.primeira_rel,false,'lg','folder')}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total} itens · Início: ${esc(p.primeira_musica)}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
+  hPls = `<div class="shufrow"><button data-npl="novo">Nova playlist</button>${pls.some(p=>p.total)?'<button data-shuf="pls">Tocar todas em aleatório</button>':''}</div>` + pls.map(p=>`<div class="pl-card"><input type="checkbox" data-pasta="${esc(p.nome)}" ${SEL.has('pasta:'+p.nome)?'checked':''} aria-label="Marcar pasta">${p.primeira_rel?cov(p.primeira_rel,false,'lg','folder'):`<span class="cv lg">${ic('folder')}</span>`}<div class="bd2"><div class="tt"><b>${esc(p.nome)}</b></div><div class="sm mut">${p.total?`${p.total} itens · Início: ${esc(p.primeira_musica)}`:'Playlist vazia'}${p.tem_mp4?' <span class="er" style="font-weight:600">· Contém vídeo</span>':''}</div></div><button class="t" data-oppl="${esc(p.nome)}" style="color:var(--at);font-weight:600">Entrar</button></div>`).join('');
  } else {
   LIBQ=mus.map(x=>x.rel);LIBSOLTAS=LIBQ.slice();
   hPls = (mus.length?`<div class="shufrow"><button data-shuf="soltas">Tocar em aleatório</button></div>`:'') + mus.slice(0,LIBN).map(linha).join('');
  }
  const totalLib = emPL ? LIBQ.length : (LIBVIEW==='pls'?0:mus.length);
  if(totalLib>LIBN) hPls += `<div id="libmais" class="sm mut" style="text-align:center;padding:14px">Mostrando ${LIBN} de ${totalLib} · role para ver mais</div>`;
- const vaz = (LIBVIEW==='pls'&&!emPL) ? ['Nenhuma playlist ainda.','Baixe uma playlist na aba Baixar ou crie uma com Mover / Copiar.'] : ['Nenhum arquivo encontrado.','Baixe uma música na aba Baixar e ela aparece aqui.'];
- $('#lib').innerHTML = hPls || `<div class="empty">${WAVE}<p>${vaz[0]}</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':vaz[1]}</p></div>`;
+ const vaz = (LIBVIEW==='pls'&&!emPL) ? ['Nenhuma playlist ainda.','Baixe uma playlist na aba Baixar ou toque em Nova playlist.'] : ['Nenhum arquivo encontrado.','Baixe uma música na aba Baixar e ela aparece aqui.'];
+ const semPl=(LIBVIEW==='pls'&&!emPL&&!pls.length);
+ $('#lib').innerHTML = (hPls&&!semPl) ? hPls : ((LIBVIEW==='pls'&&!emPL?`<div class="shufrow"><button data-npl="novo">Nova playlist</button></div>`:'')+`<div class="empty">${WAVE}<p>${vaz[0]}</p><p class="sm">${f?'Nada com esse nome. Confira a digitação.':vaz[1]}</p></div>`);
 
  let vids = ordena(LIB.videos || []);
  if(fv) vids = vids.filter(x=>nz(x.nome+' '+x.pasta).includes(fv));
@@ -3581,6 +3644,8 @@ $('#lf').oninput=()=>{LIBN=60;dlib()};$('#lfv').oninput=()=>{LIBNV=60;dlib()};
 
 document.addEventListener('click',e=>{
  if(e.target.id==='chkvid'){PL_FILTRO_VID=e.target.checked;svPL();return dlib()}
+  const npb=e.target.closest('[data-npl]');
+  if(npb){nplAbre(npb.dataset.npl);return}
   const opp=e.target.closest('[data-oppl]');
  if(opp){const nome=opp.dataset.oppl;ACTIVE_PL=LIB.playlists.find(p=>p.nome===nome)||null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
  if(e.target.id==='bvoltapl'){ACTIVE_PL=null;PL_FILTRO_VID=false;LIBN=60;svPL();return dlib()}
@@ -3716,6 +3781,7 @@ async function mvFaz(dest){
   toast([r.ok+(copiar?' copiadas':' movidas')].concat(r.pulou?[r.pulou+' ignoradas'] :[]).concat(r.falhas&&r.falhas.length?[r.falhas.length+' falhas']:[]).join(' · '))
  }catch(e){toast(e.message)}}
 $('#bmv').onclick=mvAbre;$('#mvx').onclick=()=>$('#mvs').classList.remove('on');
+$('#nplC').onclick=nplFecha;$('#nplS').onclick=nplOk;$('#nplI').onkeydown=e=>{if(e.key==='Enter')nplOk()};$('#npl').addEventListener('click',e=>{if(e.target.id==='npl')nplFecha()});
 $('#mvs').onclick=e=>{if(e.target.id==='mvs')$('#mvs').classList.remove('on')};
 $('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return;MVMODO=b.dataset.v;segset('mvmodo',MVMODO)};
 $('#mvl').onclick=e=>{const b=e.target.closest('[data-mvd]');if(b)mvFaz(b.dataset.mvd)};

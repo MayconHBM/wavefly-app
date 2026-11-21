@@ -255,6 +255,16 @@ public class PythonService extends Service {
             } catch (Throwable ignored) {
             }
             boolean baixandoAlgo = baixando + fila > 0;
+            if (baixandoAlgo) {
+                pendenteFim = true;
+            } else if (pendenteFim && !pausado) {
+                pendenteFim = false;
+                try {
+                    avisarFim();
+                } catch (Throwable t) {
+                    Log.w(TAG, "aviso de fim da fila", t);
+                }
+            }
             boolean musica = pAtivo;                     // música e vídeo (no vídeo, só o áudio)
             boolean tocandoAlgo = pAtivo && pTocando;    // música ou vídeo: mantém o app acordado
             boolean ativo = baixando > 0 || (fila > 0 && !pausado) || tocandoAlgo;
@@ -281,6 +291,47 @@ public class PythonService extends Service {
                 }
             }
         }
+    }
+
+    private boolean pendenteFim = false;
+    private static final int NOTIF_FIM_ID = 2;
+
+    /** Quando a fila termina: uma notificação com o resumo (baixadas, falhas e trocadas por alternativa). */
+    private void avisarFim() {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        String[] p = Python.getInstance().getModule("app_entry").callAttr("resumo_final").toString().split("\\|", -1);
+        int ok = Integer.parseInt(p[0]);
+        int falhas = Integer.parseInt(p[1]);
+        int alt = Integer.parseInt(p[2]);
+        if (ok + falhas == 0) return;
+        StringBuilder pt = new StringBuilder(ok + (ok == 1 ? " baixada" : " baixadas"));
+        StringBuilder en = new StringBuilder(ok + " downloaded");
+        StringBuilder es = new StringBuilder(ok + (ok == 1 ? " descargada" : " descargadas"));
+        if (falhas > 0) {
+            pt.append(" · ").append(falhas).append(falhas == 1 ? " falhou" : " falharam");
+            en.append(" · ").append(falhas).append(" failed");
+            es.append(" · ").append(falhas).append(falhas == 1 ? " falló" : " fallaron");
+        }
+        if (alt > 0) {
+            pt.append(" · ").append(alt).append(" por alternativa");
+            en.append(" · ").append(alt).append(" by alternative");
+            es.append(" · ").append(alt).append(" por alternativa");
+        }
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pi = PendingIntent.getActivity(this, 1, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL)
+                : new Notification.Builder(this);
+        b.setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(Idioma.t(this, "Fila concluída", "Queue finished", "Cola terminada"))
+                .setContentText(Idioma.t(this, pt.toString(), en.toString(), es.toString()))
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setVisibility(Notification.VISIBILITY_PUBLIC);
+        nm.notify(NOTIF_FIM_ID, b.build());
     }
 
     private void atualizarNotificacao(boolean baixando, boolean musica, boolean musicaTocando, int feitos, int total) {

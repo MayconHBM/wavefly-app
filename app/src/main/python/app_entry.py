@@ -85,6 +85,18 @@ def resumo():
         return "0|0|0|0|||0"
 
 
+def resumo_final():
+    """Resumo da fila para o aviso de fim: 'baixadas|falhas|por_alternativa'."""
+    try:
+        import waveflysite as w
+        with w.LOCK:
+            itens = list(w.ITENS)
+        ok = [i for i in itens if i.get("status") == "ok"]
+        return "%d|%d|%d" % (len(ok), sum(1 for i in itens if i.get("status") == "falha"), sum(1 for i in ok if i.get("_altv")))
+    except Exception:
+        return "0|0|0"
+
+
 def pausar(v):
     """Pausa (ou retoma) a fila de downloads: o que já está baixando termina e o resto espera."""
     try:
