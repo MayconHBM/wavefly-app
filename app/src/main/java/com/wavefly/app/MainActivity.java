@@ -344,7 +344,10 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pDurMs = durMs;
             PythonService.pEm = SystemClock.elapsedRealtime();
             PythonService.pAtivo = ativo == 1;
-            if (mudou) PythonService.acordar();
+            if (mudou) {
+                AudioFoco.estado(getApplicationContext(), ativo == 1 && tocando == 1);
+                PythonService.acordar();
+            }
         }
 
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */
@@ -382,6 +385,27 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public String lang() {
             return Idioma.lang(MainActivity.this);
+        }
+
+        /** Diagnóstico do foco de áudio (Painel do desenvolvedor). */
+        @JavascriptInterface
+        public String focoLog() {
+            return AudioFoco.log();
+        }
+
+        @JavascriptInterface
+        public void focoNota(String s) {
+            if (AudioFoco.ligado(getApplicationContext())) AudioFoco.reg("página: " + s);
+        }
+
+        @JavascriptInterface
+        public void focoMudou() {
+            AudioFoco.mudou(getApplicationContext());
+        }
+
+        @JavascriptInterface
+        public void focoLimpa() {
+            AudioFoco.limpar();
         }
 
         /** Abre os ajustes de Bluetooth do Android (o app não consegue parear sozinho). */
