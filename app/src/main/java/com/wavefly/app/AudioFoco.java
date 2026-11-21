@@ -23,6 +23,9 @@ final class AudioFoco {
     private static boolean temFoco = false;
     private static boolean pausadoPorFoco = false;
     private static boolean abaixado = false;
+    private static long tPedido = 0;
+    private static int tentativas = 0;
+    private static final android.os.Handler H = new android.os.Handler(android.os.Looper.getMainLooper());
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
     private static final SimpleDateFormat HORA = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
 
@@ -60,7 +63,21 @@ final class AudioFoco {
     private static final AudioManager.OnAudioFocusChangeListener OUVINTE = new AudioManager.OnAudioFocusChangeListener() {
         @Override
         public void onAudioFocusChange(int mudanca) {
-            reg("foco: " + nome(mudanca) + " · tocando=" + PythonService.pTocando);
+            long dt = SystemClock.elapsedRealtime() - tPedido;
+            reg("foco: " + nome(mudanca) + " · tocando=" + PythonService.pTocando + " · " + dt + " ms depois do pedido");
+            if ((mudanca == AudioManager.AUDIOFOCUS_LOSS || mudanca == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) && dt < 4000) {
+                // perdeu logo depois de pedir: algo (provavelmente o próprio WebView) pediu o foco ao começar a tocar.
+                // Não pausa a música; tenta retomar o foco depois, no máximo 2 vezes.
+                temFoco = false;
+                if (tentativas < 2) {
+                    tentativas++;
+                    reg("perda logo após pedir: não pausa; pede de novo em 1,2 s (tentativa " + tentativas + ")");
+                    H.postDelayed(() -> repedir(), 1200);
+                } else {
+                    reg("perda logo após pedir de novo: desiste de pedir (a música continua)");
+                }
+                return;
+            }
             switch (mudanca) {
                 case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                     abaixado = true;
@@ -100,6 +117,18 @@ final class AudioFoco {
         }
     };
 
+    private static synchronized void repedir() {
+        try {
+            if (am == null || pedido == null || temFoco || !PythonService.pTocando) return;
+            int r = am.requestAudioFocus(pedido);
+            tPedido = SystemClock.elapsedRealtime();
+            temFoco = r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            reg("pediu o foco de novo: " + (temFoco ? "concedido" : "negado (" + r + ")") + " · música ativa no sistema=" + am.isMusicActive());
+        } catch (Throwable t) {
+            reg("erro: " + t);
+        }
+    }
+
     /** A página avisou que o player começou ou parou de tocar. */
     static synchronized void estado(Context ctx, boolean tocando) {
         try {
@@ -118,6 +147,8 @@ final class AudioFoco {
                             .setOnAudioFocusChangeListener(OUVINTE)
                             .build();
                 }
+                tentativas = 0;
+                tPedido = SystemClock.elapsedRealtime();
                 int r = am.requestAudioFocus(pedido);
                 temFoco = r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
                 reg("pediu o foco: " + (temFoco ? "concedido" : "negado (" + r + ")"));
