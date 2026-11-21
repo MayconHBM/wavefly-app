@@ -30,7 +30,6 @@ LIBERADO = False
 CAPA_DIR = os.path.join(BASE, ".wavefly_capas")
 APP_NOME = "WaveFly YT"
 PASTA_NOME = "WaveFly"
-MAX_LINKS = 1000
 AUDIO_EXTS = (".mp3", ".m4a", ".webm", ".opus", ".ogg", ".aac")
 VIDEO_EXTS = (".mp4", ".mkv")
 EXTS = AUDIO_EXTS + VIDEO_EXTS
@@ -268,6 +267,47 @@ def sync_cookies():
     """Há login opcional no YouTube salvo? Os cookies só entram como último recurso (veja tratar_falha)."""
     p = arq_cookies()
     return bool(p and os.path.exists(p) and os.path.getsize(p) > 50)
+
+
+LOGIN_EMAIL = {"chave": None, "email": "", "busca": False}
+
+
+def _buscar_email():
+    """Descobre o e-mail da conta entrada (usa só o login já salvo neste aparelho; fica só na memória)."""
+    import http.cookiejar
+    try:
+        cj = http.cookiejar.MozillaCookieJar(arq_cookies())
+        cj.load(ignore_discard=True, ignore_expires=True)
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        req = urllib.request.Request("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard",
+                                     headers={"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"})
+        txt = op.open(req, timeout=10).read().decode("utf-8", "ignore")
+        m = re.search(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", txt)
+        return m.group(0) if m else ""
+    except Exception:
+        return ""
+
+
+def email_login():
+    """E-mail da conta (do cache). Se ainda não tem, busca em segundo plano e responde '' por enquanto."""
+    if not sync_cookies():
+        LOGIN_EMAIL.update(chave=None, email="")
+        return ""
+    try:
+        st = os.stat(arq_cookies())
+        chave = (st.st_mtime, st.st_size)
+    except OSError:
+        return ""
+    if LOGIN_EMAIL["chave"] == chave:
+        return LOGIN_EMAIL["email"]
+    if not LOGIN_EMAIL["busca"]:
+        LOGIN_EMAIL["busca"] = True
+
+        def _t():
+            e = _buscar_email()
+            LOGIN_EMAIL.update(chave=chave, email=e, busca=False)
+        threading.Thread(target=_t, daemon=True).start()
+    return ""
 
 
 def obter_info(url, alt=0, cook=False):
@@ -893,9 +933,7 @@ def _pos(v):
 def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
     g0 = GEN[0]
     links, rep, fora = extrair_links(texto)
-    cortados = max(0, len(links) - MAX_LINKS)
-    links = links[:MAX_LINKS]
-    res = {"add": 0, "rep": rep, "fora": fora, "ja": 0, "playlists": 0, "erros": [], "cortados": cortados, "avisos": []}
+    res = {"add": 0, "rep": rep, "fora": fora, "ja": 0, "playlists": 0, "erros": [], "avisos": []}
     with LOCK:
         if not any(i["status"] in ("fila", "baixando") for i in ITENS):
             nova_sessao()
@@ -940,7 +978,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
             res["add"] += 1
             
     for L in listas or []:
-        ids = [v for v in (L.get("ids") or []) if re.fullmatch(r"[\w-]{11}", str(v))][:MAX_LINKS]
+        ids = [v for v in (L.get("ids") or []) if re.fullmatch(r"[\w-]{11}", str(v))]
         if not ids:
             continue
         titulo = re.sub(r'[\\/:*?"<>|]', "", L.get("titulo") or "Playlist").strip()[:50] or "Playlist"
@@ -2492,7 +2530,7 @@ def pasta_ok():
 def cfg_publica():
     return {"res": CFG["res"], "primeira": PRIMEIRA, "pasta_ok": pasta_ok(), "android": ANDROID, "pastas": CFG["pastas"], "atual": CFG["atual"], "caminho": raiz(), "qualidade": CFG["qualidade"],
             "formato": CFG["formato"], "modo_playlist": CFG["modo_playlist"], "alt": CFG.get("alt", "manual"),
-            "max_links": MAX_LINKS, "app": APP_NOME}
+            "app": APP_NOME}
 
 
 class H(BaseHTTPRequestHandler):
@@ -2529,7 +2567,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/icon.svg":
                 return self._bytes(ICON.encode(), "image/svg+xml")
             if p == "/api/login":
-                return self._json({"logado": sync_cookies()})
+                return self._json({"logado": sync_cookies(), "email": email_login()})
             if p == "/api/estado":
                 return self._json(estado())
             if p == "/api/config":
@@ -3151,6 +3189,14 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="mvnew" placeholder="Nova playlist…" maxlength="80" style="flex:1"><button class="t" id="mvgo" style="color:var(--at);font-weight:600">Criar</button></div>
 </div></div>
 
+<div class="sheet" id="lgo"><div class="spn">
+  <div class="grip"></div>
+  <b style="font-size:18px;display:block">Sair da conta?</b>
+  <p class="sm" id="lgoN" style="margin:8px 0 4px">Você vai sair da conta do YouTube neste aparelho.</p>
+  <div id="lgoE" class="sm" style="margin:0 0 6px;word-break:break-all;color:var(--fg);font-weight:600" hidden></div>
+  <p class="sm mut" style="margin:4px 0 12px">Depois disso, o app baixa sem login.</p>
+  <div style="display:flex;gap:8px"><button id="lgoC" style="flex:1">Cancelar</button><button id="lgoS" style="flex:1">Sair</button></div>
+</div></div>
 <div class="sheet" id="mvc"><div class="spn">
   <div class="grip"></div>
   <b id="mcT" style="font-size:18px;display:block">Já existe na playlist</b>
@@ -3328,14 +3374,14 @@ $('#pv').onclick=e=>{const t=e.target;
  rpv();ccount()};
 $('#pv').onchange=e=>{const c=e.target.closest('input[data-pc]');if(!c)return;const p=PLP[c.dataset.pc];if(!p)return;c.checked?p.sel.add(c.dataset.vid):p.sel.delete(c.dataset.vid);const h=$(`[data-ph="${c.dataset.pc}"]`);if(h)h.textContent=plHead(p);ccount()};
 let FREE=0,ESPT=0,AVESP=0;function espaco(){const t=Date.now();if(t-ESPT<20000)return;ESPT=t;api('/api/espaco').then(d=>{FREE=d.livre||0;ccount()}).catch(()=>{})}
-function ccount(){const MX=C.max_links||1000;let pls=0,sing=0,sel=0,est=0,pend=0,jaN=0;
+function ccount(){let pls=0,sing=0,sel=0,est=0,pend=0,jaN=0;
  LST.forEach(x=>{const p=x.pl?PLP[x.pid]:null;if(p&&p.loading)pend++;else if(p&&!p.erro&&p.itens.length){pls++;sel+=p.sel.size;jaN+=p.nja;est+=estB(plSelDur(p))}else if(x.id&&JA.has(x.id))jaN++;else if(indisp(x)||aoVivo(x)||invalido(x)){}else{sing++;est+=estB(((x.id&&TITS.get(x.id))||{}).dur||240)}});
  const tot=sing+sel;let s=LST.length?`${tot} ${tot===1?'item':'itens'}`+(pls?` · ${pls} playlist${pls>1?'s':''}`:'')+(pend?' · carregando...':''):(LR.dup?` · ${LR.dup} repetidos`:'');
  if(jaN)s+=` · ${jaN} duplicados marcados`;
  if(est)s+=` · ~${tamf(est)}`;
  espaco();const pouco=est&&FREE&&est>FREE*0.9;if(pouco)s+=` · ⚠ pode faltar espaço (${tamf(FREE)} livres)`;
  $('#cnt').style.color=pouco?'#e5634d':'';if(pouco&&!AVESP){AVESP=1;toast('Pode faltar espaço: a lista deve ocupar ~'+tamf(est)+' e há '+tamf(FREE)+' livres')}if(!pouco)AVESP=0;
- $('#cnt').textContent=s;$('#bgo').textContent=tot>1?`Baixar ${Math.min(tot,MX)}`:'Baixar';$('#bgo').hidden=!(tot>0)}
+ $('#cnt').textContent=s;$('#bgo').textContent=tot>1?`Baixar ${tot}`:'Baixar';$('#bgo').hidden=!(tot>0)}
 let LASTDUP=0;
 function cnt(){
  const raw=$('#ta').value;

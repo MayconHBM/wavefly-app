@@ -20,6 +20,10 @@ DICT = [
     ("Transmissão ao vivo não dá para baixar", "Live streams cannot be downloaded", "Las transmisiones en vivo no se pueden descargar"),
     ("Falhou depois de várias tentativas. Use “Tentar de novo”.", "Failed after several attempts. Use “Retry”.", "Falló tras varios intentos. Usa “Reintentar”."),
     ("Tentar de novo as falhas", "Retry failed ones", "Reintentar las fallidas"),
+    ("Sair da conta?", "Sign out?", "¿Cerrar sesión?"),
+    ("Você vai sair da conta do YouTube neste aparelho.", "You will sign out of the YouTube account on this device.", "Vas a cerrar la sesión de YouTube en este dispositivo."),
+    ("Depois disso, o app baixa sem login.", "After that, the app downloads without signing in.", "Después, la app descarga sin iniciar sesión."),
+    ("Sair", "Sign out", "Salir"),
     ("Tentar versões alternativas", "Try alternative versions", "Probar versiones alternativas"),
     ("Tentar versão alternativa", "Try alternative version", "Probar versión alternativa"),
     ("Alternativa", "Alternative", "Alternativa"),
@@ -433,10 +437,18 @@ if(pn){
     var LT=LTX[LANG]||LTX.pt;
     var g4=mk('<div class="g" id="wf-g-login"><span class="l">'+LT[0]+'</span><p class="wfver">'+LT[1]+'</p><p class="wfver">'+LT[2]+'</p><p class="wfver">'+LT[3]+'</p><p class="wfver">'+LT[4]+'</p><p class="wfver"><b id="wflst"></b></p><button class="rb" id="wflbt"><span></span></button></div>');
     pn.insertBefore(g4,g3);
-    var LOGADO=false;
-    function lstat(){fetch('/api/login').then(function(r){return r.json()}).then(function(j){LOGADO=!!j.logado;
-      g4.querySelector('#wflst').textContent=LOGADO?LT[7]:LT[8];g4.querySelector('#wflbt span').textContent=LOGADO?LT[6]:LT[5]}).catch(function(){})}
-    g4.querySelector('#wflbt').onclick=function(){if(LOGADO){W.logoutYoutube();setTimeout(lstat,400)}else{W.loginYoutube()}};
+    var LOGADO=false,EMAIL='';
+    function lstat(){fetch('/api/login').then(function(r){return r.json()}).then(function(j){LOGADO=!!j.logado;EMAIL=j.email||'';if(LOGADO&&!EMAIL&&!lstat.t){lstat.t=1;setTimeout(function(){lstat.t=0;lstat()},4000)}
+      g4.querySelector('#wflst').textContent=LOGADO?LT[7]+(EMAIL?' · '+EMAIL:''):LT[8];g4.querySelector('#wflbt span').textContent=LOGADO?LT[6]:LT[5]}).catch(function(){})}
+    function fechaLgo(){document.getElementById('lgo').classList.remove('on')}
+    function abreLgo(){var e=document.getElementById('lgoE');
+      function pinta(m){if(m){e.hidden=false;e.textContent=m}else{e.hidden=true;e.textContent=''}}
+      pinta(EMAIL);document.getElementById('lgo').classList.add('on');
+      if(!EMAIL)fetch('/api/login').then(function(r){return r.json()}).then(function(j){EMAIL=j.email||'';pinta(EMAIL)}).catch(function(){})}
+    document.getElementById('lgoC').onclick=fechaLgo;
+    document.getElementById('lgo').addEventListener('click',function(ev){if(ev.target===this)fechaLgo()});
+    document.getElementById('lgoS').onclick=function(){fechaLgo();W.logoutYoutube();EMAIL='';setTimeout(lstat,400)};
+    g4.querySelector('#wflbt').onclick=function(){if(LOGADO){abreLgo()}else{W.loginYoutube()}};
     document.addEventListener('visibilitychange',function(){if(!document.hidden)setTimeout(lstat,500)});
     window.addEventListener('focus',function(){setTimeout(lstat,500)});lstat();
   }
