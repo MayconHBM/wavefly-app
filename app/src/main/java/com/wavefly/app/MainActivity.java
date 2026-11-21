@@ -124,6 +124,29 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            /* Tela cheia do vídeo (botão de expandir do player) */
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback cb) {
+                if (telaCheia != null) {
+                    cb.onCustomViewHidden();
+                    return;
+                }
+                telaCheia = view;
+                telaCheiaCb = cb;
+                ((android.widget.FrameLayout) getWindow().getDecorView()).addView(view,
+                        new android.widget.FrameLayout.LayoutParams(-1, -1));
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+                setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                sairTelaCheia();
+            }
+
             @Override
             public boolean onShowFileChooser(WebView v, android.webkit.ValueCallback<android.net.Uri[]> cb, FileChooserParams p) {
                 if (arquivoCb != null) arquivoCb.onReceiveValue(null);
@@ -272,8 +295,25 @@ public class MainActivity extends AppCompatActivity {
         }, "wavefly-share").start();
     }
 
+    private View telaCheia;
+    private WebChromeClient.CustomViewCallback telaCheiaCb;
+
+    private void sairTelaCheia() {
+        if (telaCheia == null) return;
+        ((android.widget.FrameLayout) getWindow().getDecorView()).removeView(telaCheia);
+        telaCheia = null;
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        if (telaCheiaCb != null) telaCheiaCb.onCustomViewHidden();
+        telaCheiaCb = null;
+    }
+
     @Override
     public void onBackPressed() {
+        if (telaCheia != null) {
+            sairTelaCheia();
+            return;
+        }
         if (web != null && paginaCarregada && web.canGoBack()) web.goBack();
         else moveTaskToBack(true);
     }

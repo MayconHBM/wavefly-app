@@ -3747,6 +3747,7 @@ $$('#segm button').forEach(b=>b.onclick=()=>{
  $('#m-todas').hidden=!(b.dataset.v==='todas'||b.dataset.v==='pls');
  $('#m-videos').hidden=b.dataset.v!=='videos';
  $('#m-rep').hidden=b.dataset.v!=='rep';
+ if(b.dataset.v==='videos'||b.dataset.v==='rep'){SEL.clear();dlib()}
  updbars();
 });
 
@@ -3799,14 +3800,16 @@ function tocar(rel,box,opt){
  a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>{plState(ST_STOP?'stop':'pause');playerSalvar(true)};
  a.ontimeupdate=()=>{plTime();playerSalvar()};a.onloadedmetadata=plTime;a.ondurationchange=plTime;
  if(pausado&&opt.pos>0){const p0=opt.pos;a.addEventListener('loadedmetadata',()=>{try{a.currentTime=p0}catch(e){}plTime()},{once:true})}
- if(!reuse||pausado)plState('pause');plTime();playerSalvar(true);
+ if(!reuse||pausado)plState('pause');plTime();playerSalvar(true,pausado?(opt.pos||0):0);
  if('mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:x.nome,artist:APPN,artwork:[{src:capa}]});
   navigator.mediaSession.setActionHandler('nexttrack',()=>proxima(1));navigator.mediaSession.setActionHandler('previoustrack',()=>proxima(-1))}catch(e){}}
  marcarNow()}
 /* Lembra a fila e a música para o app reabrir pausado no mesmo ponto (a ordem aleatória é a própria fila) */
 let PSAVE_T=0;
-function playerSalvar(f){if(!CUR||ST_STOP)return;const n=Date.now();if(!f&&n-PSAVE_T<3000)return;PSAVE_T=n;
- try{const a=MA();localStorage.setItem('wf_player',JSON.stringify({q:QUEUE,c:CUR,t:a&&isFinite(a.currentTime)?Math.floor(a.currentTime*10)/10:0}))}catch(e){}}
+function playerSalvar(f,t0){if(!CUR||ST_STOP)return;const n=Date.now();if(!f&&n-PSAVE_T<2000)return;PSAVE_T=n;
+ try{const a=MA();const t=(t0!=null)?t0:(a&&isFinite(a.currentTime)?Math.floor(a.currentTime*10)/10:0);localStorage.setItem('wf_player',JSON.stringify({q:QUEUE,c:CUR,t:t}))}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)playerSalvar(true)});window.addEventListener('pagehide',()=>playerSalvar(true));
+document.addEventListener('seeked',()=>playerSalvar(true),true);
 async function playerRestaurar(){
  let o=null;try{o=JSON.parse(localStorage.getItem('wf_player')||'null')}catch(e){}
  if(!o||!o.c||CUR||ehVid(o.c))return;
@@ -3897,7 +3900,7 @@ $('#mvmodo').onclick=e=>{const b=e.target.closest('button[data-v]');if(!b)return
 $('#mvl').onclick=e=>{const b=e.target.closest('[data-mvd]');if(b)mvFaz(b.dataset.mvd)};
 $('#mvgo').onclick=()=>{const n=$('#mvnew').value.trim();if(!n)return toast('Digite o nome da playlist');mvFaz(n)};
 /* Selecionar tudo: dentro de uma pasta, as músicas dela; na tela das pastas, se já há pasta marcada, todas as pastas; senão, as músicas soltas */
-function selTudo(){if(LIBVIEW==='pls'&&!ACTIVE_PL)return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
+function selTudo(){if(!$('#m-videos').hidden)return LIBQV||[];if(LIBVIEW==='pls'&&!ACTIVE_PL)return((LIB&&LIB.playlists)||[]).map(p=>'pasta:'+p.nome);return LIBQ||[]}
 $('#bsa').onclick=()=>{selTudo().forEach(r=>SEL.add(r));dlib()};
 $('#bdel').onclick=async()=>{const n=SEL.size;if(!n)return;const nP=[...SEL].filter(r=>r.startsWith('pasta:')).length,nF=n-nP;
  const msg=(nP?`Apagar <b>${nP}</b> ${nP>1?'pastas inteiras':'pasta inteira'}, com todos os arquivos dentro?`+(nF?'<br>':''):'')+(nF?`Apagar <b>${nF}</b> arquivo${nF>1?'s':''} do aparelho?`:'');
