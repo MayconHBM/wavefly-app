@@ -384,12 +384,6 @@ public class MainActivity extends AppCompatActivity {
             return Idioma.lang(MainActivity.this);
         }
 
-        /** Aparelhos Bluetooth de áudio já pareados (JSON). */
-        @JavascriptInterface
-        public String btLista() {
-            return Bluetooth.listaPareados();
-        }
-
         /** Abre os ajustes de Bluetooth do Android (o app não consegue parear sozinho). */
         @JavascriptInterface
         public void btConfig() {

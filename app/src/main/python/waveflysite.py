@@ -3322,16 +3322,6 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <p class="sm mut" style="margin:4px 0 12px">Depois disso, o app baixa sem login.</p>
   <div style="display:flex;gap:8px"><button id="lgoC" style="flex:1">Cancelar</button><button id="lgoS" style="flex:1">Sair</button></div>
 </div></div>
-<div class="sheet" id="bts" style="z-index:80"><div class="spn">
-  <div class="grip"></div>
-  <b style="font-size:18px;display:block">Bluetooth</b>
-  <label class="rb" style="margin:10px 0 4px"><span>Tocar ao conectar</span><input type="checkbox" id="btOn"></label>
-  <p class="sm mut" style="margin:4px 0 10px">Ao conectar um aparelho marcado, a música começa. Ao desconectar ou tirar o fone, ela pausa. Funciona com o app aberto ou em segundo plano.</p>
-  <span class="l" style="display:block;margin:8px 0 4px">Aparelhos pareados</span>
-  <div id="btL"></div>
-  <button class="rb" id="btPar" style="margin-top:8px"><span>Parear novo aparelho</span></button>
-  <button id="btX" style="width:100%;margin-top:10px">Fechar</button>
-</div></div>
 <div class="sheet" id="mvc"><div class="spn">
   <div class="grip"></div>
   <b id="mcT" style="font-size:18px;display:block">Já existe na playlist</b>
@@ -3818,17 +3808,6 @@ async function playerRestaurar(){
  if(!ok.has(o.c))return;
  QUEUE=(o.q||[]).filter(r=>ok.has(r));if(!QUEUE.includes(o.c))QUEUE=[o.c];
  tocar(o.c,null,{pausado:true,pos:o.t||0})}
-/* Bluetooth conectou: continua de onde parou, ou começa da primeira da lista aberta */
-function btPlay(){
- const a=MA();
- if(a&&CUR){if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}return}
- let rels=[];
- if(LIBVIEW==='pls'&&ACTIVE_PL)rels=(ACTIVE_PL.itens||[]).map(x=>x.rel);
- else rels=(LIB.musicas||[]).map(x=>x.rel);
- rels=rels.filter(r=>!ehVid(r));
- if(!rels.length)return;
- QUEUE=rels;tocar(rels[0])}
-window.btPlay=btPlay;
 const togglePlay=()=>{const a=MA();if(!a)return;if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}else a.pause()};
 $('#plprev').onclick=()=>proxima(-1);$('#plnext').onclick=()=>proxima(1);
 $('#bplay').onclick=togglePlay;
