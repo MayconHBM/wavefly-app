@@ -96,6 +96,7 @@ public class PythonService extends Service {
             ch.setShowBadge(false);
             nm.createNotificationChannel(ch);
         }
+        Bluetooth.registrar(this);
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WaveFly:downloads");
@@ -759,6 +760,7 @@ public class PythonService extends Service {
         rodando = false;
         if (vigia != null) vigia.interrupt();
         fecharSessao();
+        Bluetooth.soltar(this);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();
     }

@@ -3218,8 +3218,10 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
 #libbar #selc{white-space:nowrap;font-weight:800;font-size:15px}
 #libbar .lblk{display:flex;gap:6px}
 #libbar .lblk button{min-height:34px!important;padding:0 10px!important;font-size:13px!important;white-space:nowrap}
-#libbar .lbact{display:flex;gap:8px}
-#libbar .lbact button{flex:1 1 0;min-height:44px!important;font-size:15px!important;white-space:nowrap}
+#libbar .lbact{display:flex;flex-wrap:wrap;gap:8px}
+#libbar .lbact button{flex:1 1 auto;min-width:calc(50% - 4px);min-height:44px!important;font-size:15px!important;white-space:normal;line-height:1.15;padding:6px 10px!important}
+#libbar .lblk{flex-wrap:wrap;justify-content:flex-end}
+#sbar{flex-wrap:wrap;gap:6px}#sbar>span:last-child{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;margin-left:auto}
 #libbar .lbact button[hidden]{display:none!important}
 </style></head><body>
 <div class="w">
@@ -3319,6 +3321,16 @@ body .tabs a{ text-shadow:0 1px 0 #fff,0 2px 2px rgba(0,0,0,.15)!important; }
   <p class="sm" id="lgoN" style="margin:8px 0 4px">Você vai sair da conta do YouTube neste aparelho.</p>
   <p class="sm mut" style="margin:4px 0 12px">Depois disso, o app baixa sem login.</p>
   <div style="display:flex;gap:8px"><button id="lgoC" style="flex:1">Cancelar</button><button id="lgoS" style="flex:1">Sair</button></div>
+</div></div>
+<div class="sheet" id="bts" style="z-index:80"><div class="spn">
+  <div class="grip"></div>
+  <b style="font-size:18px;display:block">Bluetooth</b>
+  <label class="rb" style="margin:10px 0 4px"><span>Tocar ao conectar</span><input type="checkbox" id="btOn"></label>
+  <p class="sm mut" style="margin:4px 0 10px">Ao conectar um aparelho marcado, a música começa. Ao desconectar ou tirar o fone, ela pausa. Funciona com o app aberto ou em segundo plano.</p>
+  <span class="l" style="display:block;margin:8px 0 4px">Aparelhos pareados</span>
+  <div id="btL"></div>
+  <button class="rb" id="btPar" style="margin-top:8px"><span>Parear novo aparelho</span></button>
+  <button id="btX" style="width:100%;margin-top:10px">Fechar</button>
 </div></div>
 <div class="sheet" id="mvc"><div class="spn">
   <div class="grip"></div>
@@ -3637,7 +3649,7 @@ function updbars(){
 function nrep(){return RG.reduce((a,g)=>a+g.arquivos.filter(x=>x.marcada).length,0)}
 
 let ACTIVE_PL = null;
-let LIBVIEW = 'todas';   /* tela da biblioteca: todas (músicas soltas) | pls (playlists) */
+let LIBVIEW = 'todas';try{if(localStorage.getItem('wf_view')==='pls')LIBVIEW='pls'}catch(e){}   /* tela da biblioteca: todas (músicas soltas) | pls (playlists) */
 let LIBPLS = [];
 let PL_FILTRO_VID = false;try{PL_FILTRO_VID=localStorage.getItem('wf_vid_filtro')==='1'}catch(e){}
 const svPL=()=>{try{ACTIVE_PL?localStorage.setItem('wf_pl_aberta',ACTIVE_PL.nome):localStorage.removeItem('wf_pl_aberta');localStorage.setItem('wf_vid_filtro',PL_FILTRO_VID?'1':'0')}catch(e){}};
@@ -3731,7 +3743,7 @@ document.addEventListener('click',e=>{
 
 $$('#segm button').forEach(b=>b.onclick=()=>{
  segset('segm',b.dataset.v);
- if(b.dataset.v==='todas'||b.dataset.v==='pls'){LIBVIEW=b.dataset.v;LIBN=60;SEL.clear();dlib()}
+ if(b.dataset.v==='todas'||b.dataset.v==='pls'){LIBVIEW=b.dataset.v;try{localStorage.setItem('wf_view',LIBVIEW)}catch(e){}LIBN=60;SEL.clear();dlib()}
  $('#m-todas').hidden=!(b.dataset.v==='todas'||b.dataset.v==='pls');
  $('#m-videos').hidden=b.dataset.v!=='videos';
  $('#m-rep').hidden=b.dataset.v!=='rep';
@@ -3768,7 +3780,8 @@ function plCapa(x,capa,vid){const ims=[$('#pcsi')],gs=[$('#pcsg')];ims.forEach(i
 function plState(st){const p=$('#pl');p.dataset.st=st;p.classList.toggle('rodando',st==='play');const b=$('#bplay');b.innerHTML=ic(st==='play'?'pause':'play');b.setAttribute('aria-label',st==='play'?'Pausar':'Tocar')}
 function plTime(){const a=MA();if(!a)return;const d=isFinite(a.duration)?a.duration:0,c=a.currentTime||0,pc=d?Math.min(1,c/d):0;
  $('#tcur').textContent=tf(c);$('#tdur').textContent=d?tf(d):'--:--';$('#pfill').style.width=(pc*100)+'%'}
-function tocar(rel,box){
+function tocar(rel,box,opt){
+ const pausado=!!(opt&&opt.pausado);
  const all=[...(LIB.musicas||[]),...(LIB.videos||[]),...(LIB.playlists||[]).flatMap(p=>p.itens)];
  const x=all.find(i=>i.rel===rel);if(!x)return;
  if(box){QUEUE=(box.id==='libv'?LIBQV:LIBQ).length?[...(box.id==='libv'?LIBQV:LIBQ)]:[...box.querySelectorAll('[data-playrel]')].map(b=>b.dataset.playrel)}
@@ -3778,17 +3791,41 @@ function tocar(rel,box){
  $('#pl').hidden=false;$('#pl').classList.toggle('aud',!vid);document.body.classList.add('pon');
  ST_STOP=false;
  let a=MA();const reuse=!vid&&!!a&&a.tagName==='AUDIO'&&$('#pl-audio').contains(a);
- if(reuse){a.src=url;const r=a.play();if(r&&r.catch)r.catch(()=>{})}
+ if(reuse){a.src=url;if(!pausado){const r=a.play();if(r&&r.catch)r.catch(()=>{})}}
  else{$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
-  (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" autoplay src="${url}"></audio>`;a=MA()}
+  (vid?$('#tv-screen'):$('#pl-audio')).innerHTML=vid?`<video id="au" autoplay playsinline src="${url}"></video>`:`<audio id="au" ${pausado?'preload="metadata"':'autoplay'} src="${url}"></audio>`;a=MA()}
  a.volume=VOL;
  a.onended=()=>proxima(1);a.onerror=()=>{if(!a.getAttribute('src')||(a.error&&a.error.code===1))return;toast('Não consegui reproduzir este arquivo')};
- a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>plState(ST_STOP?'stop':'pause');
- a.ontimeupdate=plTime;a.onloadedmetadata=plTime;a.ondurationchange=plTime;
- if(!reuse)plState('pause');plTime();
+ a.onplay=()=>{ST_STOP=false;plState('play')};a.onpause=()=>{plState(ST_STOP?'stop':'pause');playerSalvar(true)};
+ a.ontimeupdate=()=>{plTime();playerSalvar()};a.onloadedmetadata=plTime;a.ondurationchange=plTime;
+ if(pausado&&opt.pos>0){const p0=opt.pos;a.addEventListener('loadedmetadata',()=>{try{a.currentTime=p0}catch(e){}plTime()},{once:true})}
+ if(!reuse||pausado)plState('pause');plTime();playerSalvar(true);
  if('mediaSession' in navigator){try{navigator.mediaSession.metadata=new MediaMetadata({title:x.nome,artist:APPN,artwork:[{src:capa}]});
   navigator.mediaSession.setActionHandler('nexttrack',()=>proxima(1));navigator.mediaSession.setActionHandler('previoustrack',()=>proxima(-1))}catch(e){}}
  marcarNow()}
+/* Lembra a fila e a música para o app reabrir pausado no mesmo ponto (a ordem aleatória é a própria fila) */
+let PSAVE_T=0;
+function playerSalvar(f){if(!CUR||ST_STOP)return;const n=Date.now();if(!f&&n-PSAVE_T<3000)return;PSAVE_T=n;
+ try{const a=MA();localStorage.setItem('wf_player',JSON.stringify({q:QUEUE,c:CUR,t:a&&isFinite(a.currentTime)?Math.floor(a.currentTime*10)/10:0}))}catch(e){}}
+async function playerRestaurar(){
+ let o=null;try{o=JSON.parse(localStorage.getItem('wf_player')||'null')}catch(e){}
+ if(!o||!o.c||CUR||ehVid(o.c))return;
+ await loadLib();if(CUR)return;
+ const ok=new Set([...(LIB.musicas||[]),...(LIB.playlists||[]).flatMap(p=>p.itens||[])].map(x=>x.rel));
+ if(!ok.has(o.c))return;
+ QUEUE=(o.q||[]).filter(r=>ok.has(r));if(!QUEUE.includes(o.c))QUEUE=[o.c];
+ tocar(o.c,null,{pausado:true,pos:o.t||0})}
+/* Bluetooth conectou: continua de onde parou, ou começa da primeira da lista aberta */
+function btPlay(){
+ const a=MA();
+ if(a&&CUR){if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}return}
+ let rels=[];
+ if(LIBVIEW==='pls'&&ACTIVE_PL)rels=(ACTIVE_PL.itens||[]).map(x=>x.rel);
+ else rels=(LIB.musicas||[]).map(x=>x.rel);
+ rels=rels.filter(r=>!ehVid(r));
+ if(!rels.length)return;
+ QUEUE=rels;tocar(rels[0])}
+window.btPlay=btPlay;
 const togglePlay=()=>{const a=MA();if(!a)return;if(a.paused){ST_STOP=false;const r=a.play();if(r&&r.catch)r.catch(()=>{})}else a.pause()};
 $('#plprev').onclick=()=>proxima(-1);$('#plnext').onclick=()=>proxima(1);
 $('#bplay').onclick=togglePlay;
@@ -3806,12 +3843,15 @@ const VOLI=$('#vol');VOLI.value=Math.round(VOL*100);
 VOLI.oninput=()=>{VOL=VOLI.value/100;const a=MA();if(a)a.volume=VOL;try{localStorage.setItem('wf_vol',String(VOL))}catch(e){}};
 try{new ResizeObserver(()=>document.documentElement.style.setProperty('--plh',($('#pl').offsetHeight||0)+'px')).observe($('#pl'))}catch(e){}
 function stopPlayer(){
+ try{localStorage.removeItem('wf_player')}catch(e){}
  const a=MA();if(a){ST_STOP=true;a.onerror=null;a.onended=null;a.pause();a.removeAttribute('src');a.load()}
  $('#pl').hidden=true;$('#tv-screen').innerHTML='';$('#pl-audio').innerHTML='';
  $('#pl').classList.remove('rodando');document.body.classList.remove('pon');plSemTema();CUR='';marcarNow()
 }
 function stopIf(r){if(CUR&&r.some(x=>x===CUR||(x.startsWith('pasta:')&&CUR.startsWith(x.slice(6)+'/'))))stopPlayer()}
 $('#plx').onclick=stopPlayer;
+try{segset('segm',LIBVIEW)}catch(e){}
+setTimeout(()=>{playerRestaurar().catch(()=>{})},400);
 $('#bsl').onclick=()=>{SEL.clear();dlib()};
 /* Mover / copiar para outra playlist */
 let MVMODO='mover';

@@ -344,6 +344,23 @@ public class MainActivity extends AppCompatActivity {
             return Idioma.lang(MainActivity.this);
         }
 
+        /** Aparelhos Bluetooth de áudio já pareados (JSON). */
+        @JavascriptInterface
+        public String btLista() {
+            return Bluetooth.listaPareados();
+        }
+
+        /** Abre os ajustes de Bluetooth do Android (o app não consegue parear sozinho). */
+        @JavascriptInterface
+        public void btConfig() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+                } catch (Throwable ignored) {
+                }
+            });
+        }
+
         @JavascriptInterface
         public void setLang(String l) {
             Idioma.prefs(MainActivity.this).edit().putString("lang", l == null ? "" : l).apply();
