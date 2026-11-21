@@ -344,10 +344,7 @@ public class MainActivity extends AppCompatActivity {
             PythonService.pDurMs = durMs;
             PythonService.pEm = SystemClock.elapsedRealtime();
             PythonService.pAtivo = ativo == 1;
-            if (mudou) {
-                AudioFoco.estado(getApplicationContext(), ativo == 1 && tocando == 1);
-                PythonService.acordar();
-            }
+            if (mudou) PythonService.acordar();
         }
 
         /** Prévia de vídeo da busca: o Python descobre o endereço do vídeo e a página toca no próprio lugar. */

@@ -220,8 +220,6 @@ JS = r"""<script id="wf-android-js">
       else if(c==='next')proxima(1);
       else if(c==='prev')proxima(-1);
       else if(c==='stop')stopPlayer();
-      else if(c==='duck'){if(a&&a.__duck==null){a.__duck=a.volume;a.volume=a.volume*0.25}}
-      else if(c==='unduck'){if(a&&a.__duck!=null){a.volume=a.__duck;a.__duck=null}}
       else if(c.indexOf('rel:')===0){var d=parseInt(c.slice(4),10);if(a&&isFinite(d)){var t=(a.currentTime||0)+d;if(t<0)t=0;if(isFinite(a.duration)&&t>a.duration)t=a.duration;a.currentTime=t;setTimeout(window.wfRep,200)}}
       else if(c.indexOf('seek:')===0){var ms=parseInt(c.slice(5),10);if(a&&isFinite(ms)){a.currentTime=ms/1000;setTimeout(window.wfRep,200)}}
     }catch(e){}
