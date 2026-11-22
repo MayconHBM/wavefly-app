@@ -627,6 +627,7 @@ function devAbrir(){
   function relatorio(comLog){return fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
     var v='',ap='';try{if(W&&W.versaoApp)v=W.versaoApp()}catch(e){}
     try{if(W&&W.info){var i=JSON.parse(W.info());ap='Bateria '+i.bat+'%'+(i.carregando?' (carregando)':'')+' · Memória do app '+i.memMb+' MB · Rede '+i.rede}}catch(e){}
+    if(j.erro)return 'WaveFly YT '+v+'\n'+ap+'\nERRO ao montar o relatório: '+j.erro;
     var m=j.medias||{},md=j.medianas||{};
     var L=['WaveFly YT '+v,'Aparelho: '+(navigator.userAgent||''),ap,'Idioma: '+LANG,'',
       'Modo: '+(j.freio?'freio ativo':j.rapido?'rápido':'normal')+' · downloads '+j.rede_n+' · conversões '+j.conv_n,
