@@ -355,7 +355,9 @@ def rotas(w):
             return
         except Exception as ex:
             try:
-                return self._json({"erro": str(ex)[:200], "itens": [], "mais": False}, 200)
+                import traceback
+                onde = " | ".join(l.strip() for l in traceback.format_exc().splitlines()[-4:])
+                return self._json({"erro": (str(ex) + " @ " + onde)[:420], "itens": [], "mais": False}, 200)
             except Exception:
                 return
         return orig(self)

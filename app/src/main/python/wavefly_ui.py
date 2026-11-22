@@ -583,6 +583,7 @@ function devAbrir(){
     '<div class="wfcx"><h3>Registro</h3><div class="wflog" id="wflg"></div><div class="wfbtns"><button id="wfca">Copiar tudo</button><button id="wfcp">Copiar registro</button><button id="wflp">Limpar</button></div></div></div>');
   document.body.appendChild(d);
   var sw=d.querySelector('#wfrap');
+  sw.checked=wfget('dev_rapido')==='1';
   sw.onchange=function(){wfset('dev_rapido',sw.checked?'1':'');fetch('/api/dev?rapido='+(sw.checked?1:0)).then(function(){devAtualiza()})};
   function seg(id,chave,pad){var el=d.querySelector(id),at=Math.min(5,+(wfget(chave)||pad));
     el.innerHTML=[2,3,4,5].map(function(n){return '<button type="button" data-n="'+n+'" class="'+(n===at?'on':'')+'">'+n+'</button>'}).join('');
