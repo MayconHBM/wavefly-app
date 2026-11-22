@@ -636,7 +636,13 @@ function devAbrir(){
       'Médias ('+j.n+' músicas): info '+m.info+'s · download '+m.dl+'s · conversão '+m.conv+'s · espera '+m.espera+'s · total '+m.total+'s · '+j.por_hora+'/h',
       'Medianas: total '+md.total+'s · conversão '+md.conv+'s'];
     [['Normal',j.normal],['Rápido',j.veloz]].forEach(function(x){var r=x[1];if(r&&r.n)L.push('Lote '+x[0]+': '+r.n+' músicas · '+r.medias.total+'s · '+r.por_hora+'/h')});
-    var fd=j.falhas_det||[];if(fd.length){L.push('','Falhas (detalhe):');fd.forEach(function(f){L.push(f.t+' · '+f.titulo+' · '+Math.round((f.dur||0)/60)+' min · '+f.tent+' tentativa(s) · '+f.url+'\n   '+f.erro+(f.tb?'\n   ['+f.tb+']':''))})}
+    var fd=j.falhas_det||[];if(fd.length){
+      var ST={final:'FALHA FINAL',rec:'recuperada (baixou depois)',troc:'trocada por alternativa'};
+      var fin=fd.filter(function(f){return f.fim==='final'}),rec=fd.filter(function(f){return f.fim==='rec'}).length,tro=fd.filter(function(f){return f.fim==='troc'}).length;
+      var pend=fd.length-fin.length-rec-tro;
+      L.push('','Tentativas que falharam (últimas '+fd.length+'): '+fin.length+' falha(s) final(is) · '+rec+' recuperada(s) · '+tro+' trocada(s)'+(pend>0?' · '+pend+' em andamento':''));
+      var ordem=fd.slice().sort(function(a,b){return (b.fim==='final')-(a.fim==='final')});
+      ordem.forEach(function(f){L.push((ST[f.fim]||'em andamento')+' · '+f.t+' · '+f.titulo+' · '+Math.round((f.dur||0)/60)+' min · '+f.tent+' tentativa(s) · '+f.url+'\n   '+f.erro+(f.fim==='rec'?'':(f.tb?'\n   ['+f.tb+']':'')))})}
     var tr=j.trocadas||[];if(tr.length){L.push('','Trocadas por alternativa ('+tr.length+'):');tr.forEach(function(x){L.push(x.t+' · '+x.titulo+' · '+x.de+' → '+x.para)})}
     L.push('Músicas longas: '+(j.longas_min?'até '+j.longas_min+' min':'sempre baixar'));
     var cd=j.cond||{};L.push('Condições: Wi-Fi '+(cd.wifi?'sim':'não')+' · carregando '+(cd.carga?'sim':'não')+' · bateria mínima '+(cd.bat_min?cd.bat_min+'%':'desligada')+(j.bloqueio?' · AGORA: '+j.bloqueio:''));

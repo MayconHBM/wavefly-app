@@ -1571,7 +1571,7 @@ def dev_estado():
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
-            "falhas_det": list(DEV["falhas_det"][-25:]), "trocadas": list((DEV.get("trocadas") or [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
+            "falhas_det": [f for f in DEV["falhas_det"] if f.get("fim") == "final"][-30:] + [f for f in DEV["falhas_det"] if f.get("fim") != "final"][-25:], "trocadas": list((DEV.get("trocadas") or [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
             "aparelho": _seguro("aparelho", estado_aparelho, None), "bloqueio": _seguro("bloqueio", condicao_bloqueia, ""), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
             "fila_int": _seguro("fila", fila_interna, [])}
@@ -1687,6 +1687,9 @@ def _processar(it):
     tt = it["_t"]
     with DEV_LOCK:
         DEV["ok"] += 1
+        for f in DEV["falhas_det"]:
+            if f.get("url") == it.get("url"):
+                f["fim"] = "rec"
         DEV["medidas"].append({"info": max(0, tt.get("info", 0)), "dl": max(0, tt.get("dl", 0)), "conv": max(0, tt.get("conv", 0)),
                                "espera": max(0, tt.get("espera", 0)), "total": time.monotonic() - t_ini,
                                "rap": bool(it.get("_rap")), "fim": time.time()})
@@ -1827,9 +1830,20 @@ def tentar_alternativa(it, auto=False):
         with DEV_LOCK:
             DEV["trocadas"].append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": it.get("_altv", ""), "para": novo})
             del DEV["trocadas"][:-300]
+        _marcar_falhas(it.get("url"), "troc")
     dev_log("alternativa", "%s: %s" % ((it.get("titulo") or "")[:60], novo or "nenhuma"))
     salvar_fila()
     return bool(novo)
+
+
+def _marcar_falhas(url, estado):
+    """Diz, no relatório, como terminou cada tentativa que falhou desse link."""
+    if not url:
+        return
+    with DEV_LOCK:
+        for f in DEV["falhas_det"]:
+            if f.get("url") == url:
+                f["fim"] = estado
 
 
 def tratar_falha(it, erro):
@@ -1887,6 +1901,7 @@ def tratar_falha(it, erro):
         else:
             it["_podealt"] = True
     DEV["falha"] += 1
+    _marcar_falhas(it.get("url"), "final")
     dev_log("erro", "%s: %s" % (nome, erro[:500]))
     if bloqueio:
         msg = "YouTube bloqueou temporariamente (confirmação necessária)"
