@@ -659,6 +659,7 @@ function cmp(j){
 function devAtualiza(){
   var d=document.getElementById('wfdev');if(!d)return;
   fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
+    if(j.erro||typeof j.rapido!=='boolean'){var me=d.querySelector('#wfmodo');if(me)me.textContent='Erro: '+(j.erro||'sem resposta');return}
     var sw=d.querySelector('#wfrap');sw.checked=!!j.rapido;
     var modo=j.freio?{pt:'Freio ativo: voltou ao ritmo normal por causa de um bloqueio.',en:'Brake on: back to normal speed because of a block.',es:'Freno activo: volvió al ritmo normal por un bloqueo.'}[LANG]:j.rapido?{pt:'Modo rápido em uso.',en:'Fast mode in use.',es:'Modo rápido en uso.'}[LANG]:{pt:'Modo normal.',en:'Normal mode.',es:'Modo normal.'}[LANG];
     var mm=d.querySelector('#wfmodo');mm.textContent=modo+(j.pausado?(' '+T('Downloads pausados.')):'');

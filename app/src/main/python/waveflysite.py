@@ -1526,13 +1526,42 @@ def _resumo(med):
     return {"n": n, "medias": media, "medianas": mediana, "por_hora": ph}
 
 
+def _resumo_seguro(med):
+    """Como _resumo, mas medidas antigas ou incompletas não derrubam o painel inteiro."""
+    campos = ("info", "dl", "conv", "espera", "total", "fim")
+    ok = [m for m in med if all(isinstance(m.get(k), (int, float)) for k in campos)]
+    try:
+        return _resumo(ok)
+    except Exception as ex:
+        _erro_painel("resumo", ex)
+        return {"n": 0, "medias": {k: 0 for k in campos[:5]}, "medianas": {k: 0 for k in campos[:5]}, "por_hora": 0}
+
+
+_ERRO_PAINEL = set()
+
+
+def _erro_painel(onde, ex):
+    """Anota no registro (uma vez por tipo) um erro que o painel contornou."""
+    if onde not in _ERRO_PAINEL:
+        _ERRO_PAINEL.add(onde)
+        dev_log("erro", "Painel (%s): %s" % (onde, limpar_erro(ex)[:160]))
+
+
+def _seguro(onde, fn, padrao):
+    try:
+        return fn()
+    except Exception as ex:
+        _erro_painel(onde, ex)
+        return padrao
+
+
 def dev_estado():
     with DEV_LOCK:
         todas = list(DEV["medidas"])
         log = list(DEV["log"][-80:])
     rap_ativo = bool(DEV["rapido"] and not DEV["freio"])
-    r_rap = _resumo([m for m in todas if m.get("rap")])
-    r_nor = _resumo([m for m in todas if not m.get("rap")])
+    r_rap = _resumo_seguro([m for m in todas if m.get("rap")])
+    r_nor = _resumo_seguro([m for m in todas if not m.get("rap")])
     atual = r_rap if rap_ativo else r_nor
     with LOCK:
         c = {}
@@ -1544,8 +1573,8 @@ def dev_estado():
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
             "falhas_det": list(DEV["falhas_det"][-25:]), "trocadas": list(DEV.get("trocadas", [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
-            "aparelho": estado_aparelho(), "bloqueio": condicao_bloqueia(), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
-            "fila_int": fila_interna()}
+            "aparelho": _seguro("aparelho", estado_aparelho, None), "bloqueio": _seguro("bloqueio", condicao_bloqueia, ""), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
+            "fila_int": _seguro("fila", fila_interna, [])}
 
 
 def fila_interna():
