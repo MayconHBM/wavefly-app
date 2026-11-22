@@ -1015,7 +1015,7 @@ def limpar_cancelado(it, so_sobras=False):
 
 def amigavel(erro):
     e = (erro or "").lower()
-    if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "copyright")):
+    if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "copyright")):
         return "Bloqueado por direitos autorais ou pela região."
     if "confirm your age" in e or "age-restrict" in e:
         if sync_cookies():
@@ -1861,7 +1861,7 @@ def tratar_falha(it, erro):
             it.update(status="fila", pct=0, vel="Restrição de idade: tentando com a sua conta", erro="")
         dev_log("idade", "%s: tentando com a conta do YouTube" % nome)
         return False
-    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
+    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
