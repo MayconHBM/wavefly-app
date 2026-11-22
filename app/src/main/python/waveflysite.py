@@ -1215,7 +1215,7 @@ def rel_do_arquivo(destino, nome, exts):
 
 # --------------------------------------------------------------------------- pausa / modo rápido / registro
 PAUSA = {"on": False}
-DEV = {"rapido": False, "freio": False, "log": [], "medidas": [], "gap": 1.0, "suave_ate": 0, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0, "longas_min": 0, "falhas_det": [], "cond_wifi": False, "cond_carga": False, "bat_min": 20, "lotes": []}
+DEV = {"rapido": False, "freio": False, "trocadas": [], "log": [], "medidas": [], "gap": 1.0, "suave_ate": 0, "rede_n": 4, "conv_n": 4, "esfriar": 0.0, "ult_rede": 0.0, "ok": 0, "falha": 0, "longas_min": 0, "falhas_det": [], "cond_wifi": False, "cond_carga": False, "bat_min": 20, "lotes": []}
 DEV_LOCK = threading.Lock()
 class Limite:
     """Semáforo cujo limite pode mudar na hora (o painel do desenvolvedor ajusta)."""
@@ -1284,7 +1284,7 @@ def _carregar_log():
             dados = json.load(f)
         with DEV_LOCK:
             for k in _LOG_CHAVES:
-                if k in dados and isinstance(dados[k], type(DEV.get(k))):
+                if dados.get(k) is not None and isinstance(dados[k], type(DEV.get(k))):
                     DEV[k] = dados[k]
     except Exception:
         pass
@@ -1571,7 +1571,7 @@ def dev_estado():
             "por_hora": atual["por_hora"], "normal": r_nor, "veloz": r_rap,
             "ok": DEV["ok"], "falha": DEV["falha"], "cont": c, "log": log,
             "rede_n": DEV["rede_n"], "conv_n": DEV["conv_n"], "longas_min": DEV["longas_min"],
-            "falhas_det": list(DEV["falhas_det"][-25:]), "trocadas": list(DEV.get("trocadas", [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
+            "falhas_det": list(DEV["falhas_det"][-25:]), "trocadas": list((DEV.get("trocadas") or [])[-300:]), "lotes": list(DEV["lotes"][-5:]),
             "cond": {"wifi": DEV["cond_wifi"], "carga": DEV["cond_carga"], "bat_min": DEV["bat_min"]},
             "aparelho": _seguro("aparelho", estado_aparelho, None), "bloqueio": _seguro("bloqueio", condicao_bloqueia, ""), "esfriar_s": max(0, int(DEV["esfriar"] - time.time())), "leitura_ha": int(time.time() - _EST["t"]) if _EST["t"] else None, "leitura_ok": _EST["v"] is not None,
             "fila_int": _seguro("fila", fila_interna, [])}
@@ -1825,7 +1825,7 @@ def tentar_alternativa(it, auto=False):
                 it["erro"] = "Não achei uma versão alternativa parecida."
     if novo:
         with DEV_LOCK:
-            DEV.setdefault("trocadas", []).append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": it.get("_altv", ""), "para": novo})
+            DEV["trocadas"].append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": it.get("_altv", ""), "para": novo})
             del DEV["trocadas"][:-300]
     dev_log("alternativa", "%s: %s" % ((it.get("titulo") or "")[:60], novo or "nenhuma"))
     salvar_fila()
