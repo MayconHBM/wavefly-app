@@ -136,7 +136,6 @@ DICT = [
     ("Procurar repetidas", "Find duplicates", "Buscar repetidas"), ("Apagar", "Delete", "Borrar"), ("Apagar marcadas", "Delete selected", "Borrar marcadas"),
     ("Anterior", "Previous", "Anterior"), ("Próxima", "Next", "Siguiente"), ("Tocar", "Play", "Reproducir"),
     ("Voltar 10 segundos", "Back 10 seconds", "Retroceder 10 segundos"), ("Avançar 10 segundos", "Forward 10 seconds", "Avanzar 10 segundos"),
-    ("Foco de áudio (teste)", "Audio focus (test)", "Foco de audio (prueba)"),
     ("Fechar", "Close", "Cerrar"), ("Tela cheia", "Full screen", "Pantalla completa"), ("Volume", "Volume", "Volumen"),
     ("Limpar busca", "Clear search", "Borrar búsqueda"), ("Ajustes", "Settings", "Ajustes"),
     ("Ajustes e Qualidade", "Settings and Quality", "Ajustes y calidad"), ("Concluir", "Done", "Listo"),
@@ -571,7 +570,6 @@ function devAbrir(){
     '<div class="wfcx"><h3>Player e notificação</h3><div class="wfrow"><span class="wft">Pulo dos botões (segundos)</span></div><span class="wfseg" id="wfps"></span>'+
     '<p class="note">⏮ volta ao início da música se ela já passou de 3 segundos; um segundo toque vai para a anterior. Músicas com 10 minutos ou mais continuam de onde pararam.</p></div>'+
     '<div class="wfcx"><h3>Condições para baixar</h3>'+
-    '<div class="wfrow"><span class="wft">Foco de áudio (teste)</span><label class="wfsw"><input type="checkbox" id="wfcf"><i></i></label></div>'+
     '<div class="wfrow"><span class="wft">Só no Wi-Fi</span><label class="wfsw"><input type="checkbox" id="wfcw"><i></i></label></div>'+
     '<div class="wfrow"><span class="wft">Só carregando</span><label class="wfsw"><input type="checkbox" id="wfcc"><i></i></label></div>'+
     '<div class="wfrow"><span class="wft">Bateria mínima</span><span class="wfstep"><button type="button" id="wfbm">−</button><b id="wfbv"></b><button type="button" id="wfbp">+</button></span></div>'+
@@ -622,10 +620,8 @@ function devAbrir(){
     cw.onchange=function(){wfset('dev_wifi',cw.checked?'1':'');envia()};cc.onchange=function(){wfset('dev_carga',cc.checked?'1':'');envia()};
     d.querySelector('#wfbm').onclick=function(){bm=Math.max(0,bm-5);wfset('dev_batmin',String(bm));pinta();envia()};
     d.querySelector('#wfbp').onclick=function(){bm=Math.min(50,bm+5);wfset('dev_batmin',String(bm));pinta();envia()};pinta()})();
-  (function(){var cf=d.querySelector('#wfcf');cf.checked=wfget('foco')==='1';
-    cf.onchange=function(){wfset('foco',cf.checked?'1':'');try{if(W&&W.focoMudou)W.focoMudou()}catch(e){}}})();
   d.querySelector('#wfdx').onclick=function(){clearInterval(DEVT);DEVT=null;d.remove()};
-  d.querySelector('#wflp').onclick=function(){conf(T('Limpar o registro? Isso não pode ser desfeito.'),T('Limpar')).then(function(ok){if(ok){try{if(W&&W.focoLimpa)W.focoLimpa()}catch(e){}fetch('/api/dev?limpar=1').then(function(){devAtualiza()})}})};
+  d.querySelector('#wflp').onclick=function(){conf(T('Limpar o registro? Isso não pode ser desfeito.'),T('Limpar')).then(function(ok){if(ok)fetch('/api/dev?limpar=1').then(function(){devAtualiza()})})};
   function copia(t,msg){try{if(W&&W.copiar){W.copiar(t);toast(T(msg));return}}catch(e){}
     try{var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast(T(msg))}catch(e){}}
   function relatorio(comLog){return fetch('/api/dev').then(function(r){return r.json()}).then(function(j){
@@ -646,7 +642,6 @@ function devAbrir(){
     L.push('Leitura do aparelho: '+(j.leitura_ok?'ok':'FALHOU')+(j.leitura_ha!=null?' (há '+j.leitura_ha+'s)':'')+(j.aparelho?' · bateria '+j.aparelho.bat+'% · '+(j.aparelho.carregando?'carregando':'na bateria')+' · rede '+j.aparelho.rede:'')+' · bloqueio agora: '+(j.bloqueio||'nenhum')+' · esfriando: '+(j.esfriar_s?j.esfriar_s+'s':'não')+' · pausado: '+(j.pausado?'sim':'não'));
     (j.lotes||[]).forEach(function(l){L.push('Lote '+l.t+': '+l.musicas+' músicas · '+Math.floor(l.seg/60)+'min'+(l.seg%60)+'s · bateria '+l.bat_ini+'→'+l.bat_fim+'%'+(l.carga?' (carregando)':'')+' · temp '+l.temp_ini+'→'+l.temp_max+' °C · térmico '+l.termico+' · '+(l.rap?'rápido':'normal')+' '+l.rede_n+'/'+l.conv_n)});
     var fi=j.fila_int||[];if(fi.length){L.push('','Fila agora:');fi.forEach(function(x){L.push('#'+x.id+' '+x.st+' tent '+x.tent+' mét '+x.alt+' '+Math.round((x.dur||0)/60)+'min info '+x.info+' dl '+x.dl+' conv '+x.conv)})}
-    try{if(W&&W.focoLog){var fl=W.focoLog();if(fl)L.push('','Foco de áudio:',fl)}}catch(e){}
     if(comLog!==false){L.push('','Registro:');L=L.concat((j.log||[]).slice(-40).map(function(x){return x.t+' ['+x.tipo+'] '+x.msg}))}
     return L.join('\n')})}
   d.querySelector('#wfca').onclick=function(){relatorio(true).then(function(t){copia(t,'Relatório copiado')})};
