@@ -1801,6 +1801,14 @@ def _palavras(t):
     return [x for x in w if x not in _RUIDO and not re.fullmatch(r"(19|20)\d\d", x)]
 
 
+_PALAVROES = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt|dick|pussy|asshole|bastard|porra|caralho|merda|puta|foda\w*|cacete|buceta|viado|cu)\b", re.I)
+
+
+def _abrevia(p):
+    """fuck -> fck, shit -> sht (como as pessoas digitam para a busca não esconder o resultado)."""
+    return p[0] + re.sub(r"[aeiouAEIOU]", "", p[1:]) if len(p) > 2 else p
+
+
 def buscar_alternativa(it):
     """Procura outra versão do mesmo vídeo: título parecido e duração parecida. Devolve o endereço ou None."""
     titulo = (it.get("titulo") or "").strip()
@@ -1817,12 +1825,15 @@ def buscar_alternativa(it):
     curto = len(a) <= 2
 
     rejeitados = []
+    total_vistos = [0]
 
     def procurar(consulta, minimo):
         with yt_dlp.YoutubeDL(dict(OPTS, extract_flat=True, skip_download=True, socket_timeout=10)) as ydl:
             info = ydl.extract_info("ytsearch12:" + consulta, download=False)
         melhor, nota = None, -1
         for e in info.get("entries") or []:
+            if isinstance(e, dict) and len(e.get("id") or "") == 11:
+                total_vistos[0] += 1
             if not isinstance(e, dict) or len(e.get("id") or "") != 11 or e["id"] == vid0:
                 continue
             t = e.get("title") or ""
@@ -1856,13 +1867,22 @@ def buscar_alternativa(it):
         p = [x for x in _palavras(titulo)][:5]
         if len(p) >= 2 or (p and art):
             melhor = procurar(" ".join(sorted(art)[:3] + p), 0.75 if d0 else 0.7)
+    if not melhor and _PALAVROES.search(titulo + " " + canal):
+        # A busca do YouTube costuma esconder resultados quando a consulta tem palavrão ("fuck forever" volta quase nada,
+        # "fck forever" volta tudo). Tenta de novo com a palavra abreviada (sem vogais) e depois sem ela.
+        base_q = " ".join(dict.fromkeys((canal + " " + " ".join(_palavras(titulo)[:5])).lower().split()))
+        for q in (_PALAVROES.sub(lambda m: _abrevia(m.group(0)), base_q), _PALAVROES.sub(" ", base_q)):
+            melhor = procurar(" ".join(q.split()), 0.75 if d0 else 0.7)
+            if melhor:
+                dev_log("alternativa", "achada com a busca sem o palavrão: %s" % q[:60])
+                break
     if not melhor:
         try:      # para o relatório: o que apareceu na busca e por que nenhum serviu (os 4 mais parecidos)
             vistos_r, linhas = set(), []
             for cob, d in sorted(rejeitados, key=lambda x: -x[0]):
                 if d not in vistos_r:
                     vistos_r.add(d); linhas.append(d)
-            dev_log("alternativa", "descartados: " + (" | ".join(linhas[:4]) if linhas else "a busca não trouxe outros vídeos"))
+            dev_log("alternativa", "descartados (a busca trouxe %d vídeos): " % total_vistos[0] + (" | ".join(linhas[:4]) if linhas else "nenhum além do próprio"))
         except Exception:
             pass
     return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
