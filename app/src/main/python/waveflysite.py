@@ -8,7 +8,7 @@ Uso:   python wavefly_yt.py          ->  abre http://localhost:8773
 
 Precisa de:  pip install -U yt-dlp   (+ ffmpeg instalado)
 """
-import argparse, copy, hashlib, json, os, random, re, shutil, signal, subprocess, sys, threading, time, traceback, unicodedata, webbrowser
+import argparse, copy, hashlib, json, os, random, re, shutil, signal, subprocess, sys, tempfile, threading, time, traceback, unicodedata, webbrowser
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -265,6 +265,27 @@ def arq_cookies():
     return os.path.join(d, "cookies.txt") if d else ""
 
 
+def cookie_copia():
+    """O yt-dlp REGRAVA o arquivo de cookies ao terminar; com vários downloads juntos isso corrompia o arquivo
+    ("does not look like a Netscape format cookies file"). Cada uso trabalha numa cópia própria."""
+    d = os.environ.get("WAVEFLY_DATA") or tempfile.gettempdir()
+    try:
+        agora = time.time()
+        for f in os.listdir(d):
+            if f.startswith("cookies_tmp_"):
+                try:
+                    if agora - os.path.getmtime(os.path.join(d, f)) > 900:
+                        os.remove(os.path.join(d, f))
+                except OSError:
+                    pass
+        fd, tmp = tempfile.mkstemp(prefix="cookies_tmp_", suffix=".txt", dir=d)
+        os.close(fd)
+        shutil.copyfile(arq_cookies(), tmp)
+        return tmp
+    except Exception:
+        return arq_cookies()
+
+
 def sync_cookies():
     """Há login opcional no YouTube salvo? Os cookies só entram como último recurso (veja tratar_falha)."""
     p = arq_cookies()
@@ -291,7 +312,7 @@ CLIENTES_CONTA = [["web_creator"], ["tv"], ["web_safari"], ["mweb"], ["tv_embedd
 
 def obter_info(url, alt=0, cook=False):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
-    base_opts = dict(OPTS, cookiefile=arq_cookies()) if (cook and sync_cookies()) else OPTS
+    base_opts = dict(OPTS, cookiefile=cookie_copia()) if (cook and sync_cookies()) else OPTS
     cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
     if cook and not cli and sync_cookies():
         ultimo = None
@@ -1096,7 +1117,7 @@ def baixar(it, info, nome, destino):
     ext_orig = (info.get("ext") or "").lower()
 
     def tentar(com_capa):
-        opts = dict(OPTS, **({"cookiefile": arq_cookies()} if it.get("_cook") else {}), progress_hooks=[hook], concurrent_fragments=4, fragment_retries=3,
+        opts = dict(OPTS, **({"cookiefile": cookie_copia()} if it.get("_cook") else {}), progress_hooks=[hook], concurrent_fragments=4, fragment_retries=3,
                     outtmpl=os.path.join(destino, nome.replace("%", "%%") + ".%(ext)s"))
         pps = []
         if it["fmt"] == "video":
