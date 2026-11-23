@@ -286,12 +286,26 @@ def _resumo_cookies():
         return "sem arquivo (%s)" % ex
 
 
+CLIENTES_CONTA = [["web_creator"], ["tv"], ["web_safari"], ["mweb"], ["tv_embedded"], ["web"]]
+
+
 def obter_info(url, alt=0, cook=False):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
     base_opts = dict(OPTS, cookiefile=arq_cookies()) if (cook and sync_cookies()) else OPTS
     cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
     if cook and not cli and sync_cookies():
-        cli = ["tv", "web", "mweb"]      # com login: só clientes que aceitam cookies (o padrão inclui um que ignora a conta)
+        ultimo = None
+        for c in CLIENTES_CONTA:     # com a conta: um cliente por vez (os que aceitam cookies), até algum devolver o áudio
+            try:
+                with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": c}})) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    base = _nome_base(ydl, info)
+                dev_log("idade", "cliente %s funcionou" % "+".join(c))
+                return info, info.get("title", "sem título"), base
+            except Exception as ex:
+                ultimo = ex
+                dev_log("idade", "cliente %s: %s" % ("+".join(c), limpar_erro(ex)[:110]))
+        raise Exception("ERROR: [youtube] age-restricted: a conta entrou, mas nenhum cliente liberou o áudio (%s)" % limpar_erro(ultimo)[:120])
     if cli:
         with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": cli}})) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -1034,6 +1048,8 @@ def amigavel(erro):
     e = (erro or "").lower()
     if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "copyright")):
         return "Bloqueado por direitos autorais ou pela região."
+    if "nenhum cliente liberou" in e:
+        return "Restrição de idade: o YouTube não liberou o áudio mesmo com a sua conta."
     if "confirm your age" in e or "age-restrict" in e:
         if sync_cookies():
             return "Restrição de idade: a conta do YouTube entrou, mas não teve acesso. Confirme a idade nela."
@@ -1799,29 +1815,40 @@ def buscar_alternativa(it):
         return None
     art = set(_palavras(canal))
     curto = len(a) <= 2
-    with yt_dlp.YoutubeDL(dict(OPTS, extract_flat=True, skip_download=True, socket_timeout=10)) as ydl:
-        info = ydl.extract_info("ytsearch10:" + (titulo + " " + canal).strip(), download=False)
-    melhor, nota = None, -1
-    for e in info.get("entries") or []:
-        if not isinstance(e, dict) or len(e.get("id") or "") != 11 or e["id"] == vid0:
-            continue
-        t = e.get("title") or ""
-        mr = _RUIM.search(t)
-        if mr and not re.search(r"\b" + re.escape(mr.group(1)) + r"\b", titulo, re.I):
-            continue
-        c = e.get("duration")
-        if d0:
-            if not c or abs(c - d0) > max(15, 0.10 * d0):
+
+    def procurar(consulta, minimo):
+        with yt_dlp.YoutubeDL(dict(OPTS, extract_flat=True, skip_download=True, socket_timeout=10)) as ydl:
+            info = ydl.extract_info("ytsearch12:" + consulta, download=False)
+        melhor, nota = None, -1
+        for e in info.get("entries") or []:
+            if not isinstance(e, dict) or len(e.get("id") or "") != 11 or e["id"] == vid0:
                 continue
-        b = set(_palavras(t + " " + (e.get("channel") or e.get("uploader") or "")))
-        cob = len(a & b) / len(a)
-        if cob < (0.9 if not d0 else 0.75):
-            continue
-        if curto and art and not (art & b):
-            continue            # título curto ("Hello", "Vogue"): exige o artista também
-        n = cob - (abs(c - d0) / d0 if (d0 and c) else 0) - 0.02 * max(0, len(set(_palavras(t))) - len(a))
-        if n > nota:
-            melhor, nota = e["id"], n
+            t = e.get("title") or ""
+            mr = _RUIM.search(t)
+            if mr and not re.search(r"\b" + re.escape(mr.group(1)) + r"\b", titulo, re.I):
+                continue
+            c = e.get("duration")
+            if d0:
+                if not c or abs(c - d0) > max(15, 0.10 * d0):
+                    continue
+            b = set(_palavras(t + " " + (e.get("channel") or e.get("uploader") or "")))
+            cob = len(a & b) / len(a)
+            if cob < minimo:
+                continue
+            if curto and art and not (art & b):
+                continue            # título curto ("Hello", "Vogue"): exige o artista também
+            n = cob - (abs(c - d0) / d0 if (d0 and c) else 0) - 0.02 * max(0, len(set(_palavras(t))) - len(a))
+            if n > nota:
+                melhor, nota = e["id"], n
+        return melhor
+
+    melhor = procurar((titulo + " " + canal).strip(), 0.75 if d0 else 0.9)
+    if not melhor:
+        # segunda chance: só artista + palavras principais (sem "Official Video" etc.) e, se não sei a duração, exigência menor
+        # (a palavra explícita no título às vezes só traz de volta o próprio vídeo restrito)
+        p = [x for x in _palavras(titulo)][:5]
+        if len(p) >= 2 or (p and art):
+            melhor = procurar(" ".join(sorted(art)[:3] + p), 0.75 if d0 else 0.7)
     return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
 
 
@@ -1892,7 +1919,8 @@ def tratar_falha(it, erro):
             it.update(status="fila", pct=0, vel="Restrição de idade: tentando com a sua conta", erro="")
         dev_log("idade", "%s: tentando com a conta do YouTube (%s)" % (nome, _resumo_cookies()))
         return False
-    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
+    sem_conta_ok = bool(it.get("_idade") and it.get("_cook"))      # já tentou com a conta e todos os clientes: repetir não adianta
+    permanente = sem_conta_ok or (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira

@@ -164,6 +164,7 @@ DICT = [
     ("Ouvir prévia", "Preview", "Escuchar vista previa"), ("Link não reconhecido. Confira se ele está correto.", "Link not recognized. Check that it is correct.", "Enlace no reconocido. Comprueba que sea correcto."),
     ("Vídeo indisponível (privado, removido ou bloqueado).", "Video unavailable (private, removed or blocked).", "Vídeo no disponible (privado, eliminado o bloqueado)."),
     ("Bloqueado por direitos autorais ou pela região.", "Blocked for copyright or by region.", "Bloqueado por derechos de autor o por la región."),
+    ("Restrição de idade: o YouTube não liberou o áudio mesmo com a sua conta.", "Age restriction: YouTube did not release the audio even with your account.", "Restricción de edad: YouTube no liberó el audio ni con tu cuenta."),
     ("Restrição de idade: precisa entrar com a conta do YouTube (Ajustes).", "Age restriction: sign in with your YouTube account (Settings).", "Restricción de edad: inicia sesión con tu cuenta de YouTube (Ajustes)."),
     ("Vídeo com restrição de idade: não dá para baixar.", "Age-restricted video: cannot be downloaded.", "Vídeo con restricción de edad: no se puede descargar."),
     ("Título indisponível", "Title unavailable", "Título no disponible"),
