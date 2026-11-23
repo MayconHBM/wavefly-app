@@ -271,10 +271,27 @@ def sync_cookies():
     return bool(p and os.path.exists(p) and os.path.getsize(p) > 50)
 
 
+def _resumo_cookies():
+    """Para o relatório: o arquivo de login tem os cookies principais da conta? (só os nomes, nunca os valores)"""
+    try:
+        nomes = set()
+        with open(arq_cookies(), encoding="utf-8", errors="ignore") as f:
+            for l in f:
+                p = l.rstrip("\n").split("\t")
+                if len(p) >= 7 and not l.startswith("#"):
+                    nomes.add(p[5])
+        chaves = ["SID", "HSID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID", "__Secure-1PSIDTS", "LOGIN_INFO"]
+        return "%d cookies; %s" % (len(nomes), " ".join(k + ("=sim" if k in nomes else "=NÃO") for k in chaves))
+    except Exception as ex:
+        return "sem arquivo (%s)" % ex
+
+
 def obter_info(url, alt=0, cook=False):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
     base_opts = dict(OPTS, cookiefile=arq_cookies()) if (cook and sync_cookies()) else OPTS
     cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
+    if cook and not cli and sync_cookies():
+        cli = ["tv", "web", "mweb"]      # com login: só clientes que aceitam cookies (o padrão inclui um que ignora a conta)
     if cli:
         with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": cli}})) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -1873,7 +1890,7 @@ def tratar_falha(it, erro):
         it["_nao_antes"] = 0
         with LOCK:
             it.update(status="fila", pct=0, vel="Restrição de idade: tentando com a sua conta", erro="")
-        dev_log("idade", "%s: tentando com a conta do YouTube" % nome)
+        dev_log("idade", "%s: tentando com a conta do YouTube (%s)" % (nome, _resumo_cookies()))
         return False
     permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
