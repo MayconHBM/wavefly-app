@@ -1816,6 +1816,8 @@ def buscar_alternativa(it):
     art = set(_palavras(canal))
     curto = len(a) <= 2
 
+    rejeitados = []
+
     def procurar(consulta, minimo):
         with yt_dlp.YoutubeDL(dict(OPTS, extract_flat=True, skip_download=True, socket_timeout=10)) as ydl:
             info = ydl.extract_info("ytsearch12:" + consulta, download=False)
@@ -1824,18 +1826,23 @@ def buscar_alternativa(it):
             if not isinstance(e, dict) or len(e.get("id") or "") != 11 or e["id"] == vid0:
                 continue
             t = e.get("title") or ""
-            mr = _RUIM.search(t)
-            if mr and not re.search(r"\b" + re.escape(mr.group(1)) + r"\b", titulo, re.I):
-                continue
             c = e.get("duration")
-            if d0:
-                if not c or abs(c - d0) > max(15, 0.10 * d0):
-                    continue
             b = set(_palavras(t + " " + (e.get("channel") or e.get("uploader") or "")))
             cob = len(a & b) / len(a)
+            desc = "%s [%s] %s" % (t[:45], (e.get("channel") or e.get("uploader") or "?")[:20], ("%d:%02d" % divmod(int(c), 60)) if c else "?:??")
+            mr = _RUIM.search(t)
+            if mr and not re.search(r"\b" + re.escape(mr.group(1)) + r"\b", titulo, re.I):
+                rejeitados.append((cob, "%s -> palavra '%s'" % (desc, mr.group(1))))
+                continue
+            if d0:
+                if not c or abs(c - d0) > max(15, 0.10 * d0):
+                    rejeitados.append((cob, "%s -> duração (original %d:%02d)" % (desc, d0 // 60, d0 % 60)))
+                    continue
             if cob < minimo:
+                rejeitados.append((cob, "%s -> só %d%% das palavras" % (desc, int(cob * 100))))
                 continue
             if curto and art and not (art & b):
+                rejeitados.append((cob, "%s -> falta o artista" % desc))
                 continue            # título curto ("Hello", "Vogue"): exige o artista também
             n = cob - (abs(c - d0) / d0 if (d0 and c) else 0) - 0.02 * max(0, len(set(_palavras(t))) - len(a))
             if n > nota:
@@ -1849,6 +1856,15 @@ def buscar_alternativa(it):
         p = [x for x in _palavras(titulo)][:5]
         if len(p) >= 2 or (p and art):
             melhor = procurar(" ".join(sorted(art)[:3] + p), 0.75 if d0 else 0.7)
+    if not melhor:
+        try:      # para o relatório: o que apareceu na busca e por que nenhum serviu (os 4 mais parecidos)
+            vistos_r, linhas = set(), []
+            for cob, d in sorted(rejeitados, key=lambda x: -x[0]):
+                if d not in vistos_r:
+                    vistos_r.add(d); linhas.append(d)
+            dev_log("alternativa", "descartados: " + (" | ".join(linhas[:4]) if linhas else "a busca não trouxe outros vídeos"))
+        except Exception:
+            pass
     return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
 
 
