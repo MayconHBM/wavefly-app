@@ -293,41 +293,10 @@ def sync_cookies():
     return bool(p and os.path.exists(p) and os.path.getsize(p) > 50)
 
 
-def _resumo_cookies():
-    """Para o relatório: o arquivo de login tem os cookies principais da conta? (só os nomes, nunca os valores)"""
-    try:
-        nomes = set()
-        with open(arq_cookies(), encoding="utf-8", errors="ignore") as f:
-            for l in f:
-                p = l.rstrip("\n").split("\t")
-                if len(p) >= 7 and not l.startswith("#"):
-                    nomes.add(p[5])
-        chaves = ["SID", "HSID", "SSID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID", "__Secure-1PSIDTS", "LOGIN_INFO"]
-        return "%d cookies; %s" % (len(nomes), " ".join(k + ("=sim" if k in nomes else "=NÃO") for k in chaves))
-    except Exception as ex:
-        return "sem arquivo (%s)" % ex
-
-
-CLIENTES_CONTA = [["web_creator"], ["tv"], ["web_safari"], ["mweb"], ["tv_embedded"], ["web"]]
-
-
 def obter_info(url, alt=0, cook=False):
     """alt > 0: tentativa com outro 'cliente' do YouTube (usado quando o endereço do vídeo foi recusado)."""
     base_opts = dict(OPTS, cookiefile=cookie_copia()) if (cook and sync_cookies()) else OPTS
     cli = CLIENTES_ALT[min(alt, len(CLIENTES_ALT) - 1)]
-    if cook and not cli and sync_cookies():
-        ultimo = None
-        for c in CLIENTES_CONTA:     # com a conta: um cliente por vez (os que aceitam cookies), até algum devolver o áudio
-            try:
-                with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": c, "formats": ["missing_pot"]}})) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    base = _nome_base(ydl, info)
-                dev_log("idade", "cliente %s funcionou" % "+".join(c))
-                return info, info.get("title", "sem título"), base
-            except Exception as ex:
-                ultimo = ex
-                dev_log("idade", "cliente %s: %s" % ("+".join(c), limpar_erro(ex)[:110]))
-        raise Exception("ERROR: [youtube] age-restricted: a conta entrou, mas nenhum cliente liberou o áudio (%s)" % limpar_erro(ultimo)[:120])
     if cli:
         with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": cli}})) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -1070,12 +1039,8 @@ def amigavel(erro):
     e = (erro or "").lower()
     if any(x in e for x in ("claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "copyright")):
         return "Bloqueado por direitos autorais ou pela região."
-    if "nenhum cliente liberou" in e:
-        return "Restrição de idade: o YouTube não liberou o áudio mesmo com a sua conta."
     if "confirm your age" in e or "age-restrict" in e:
-        if sync_cookies():
-            return "Restrição de idade: a conta do YouTube entrou, mas não teve acesso. Confirme a idade nela."
-        return "Restrição de idade: precisa entrar com a conta do YouTube (Ajustes)."
+        return "Vídeo com restrição de idade: não dá para baixar."
     if any(x in e for x in ("unsupported url", "extractor", "not a valid url", "no suitable", "is not a valid", "invalid url")):
         return "Link não reconhecido. Confira se ele está correto."
     if any(x in e for x in ("video unavailable", "private video", "has been removed", "no longer available", "this video is", "not available")):
@@ -1975,17 +1940,7 @@ def tratar_falha(it, erro):
     if bloqueio:
         acionar_freio("YouTube pediu confirmação (bloqueio)")
         DEV["esfriar"] = time.time() + 240
-    idade = "confirm your age" in e or "age-restrict" in e or bool(re.search(r"\bage\b", e) and "restrict" in e)
-    if idade and not it.get("_idade") and sync_cookies():
-        it["_idade"] = True                      # logado: tenta uma vez com a conta antes de desistir
-        it["_cook"] = True
-        it["_nao_antes"] = 0
-        with LOCK:
-            it.update(status="fila", pct=0, vel="Restrição de idade: tentando com a sua conta", erro="")
-        dev_log("idade", "%s: tentando com a conta do YouTube (%s)" % (nome, _resumo_cookies()))
-        return False
-    sem_conta_ok = bool(it.get("_idade") and it.get("_cook"))      # já tentou com a conta e todos os clientes: repetir não adianta
-    permanente = sem_conta_ok or (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
+    permanente = (any(x in e for x in ("private video", "members-only", "copyright", "claimed content", "blocked it", "who has blocked", "in your country", "vpn or a proxy", "confirm your age")) or bool(re.search(r"\bage\b|age-restrict|age restrict", e))) and "try again" not in e
     suspeito_indisp = any(x in e for x in ("unsupported url", "extractor", "not a valid", "video unavailable", "not available", "no longer available", "this video"))
     if suspeito_indisp and not permanente:
         permanente = indisponivel_de_verdade(it)      # o YouTube confirma? Senão, foi falha passageira
