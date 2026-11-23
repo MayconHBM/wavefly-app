@@ -1830,7 +1830,7 @@ def tentar_alternativa(it, auto=False):
         with DEV_LOCK:
             DEV["trocadas"].append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": it.get("_altv", ""), "para": novo})
             del DEV["trocadas"][:-300]
-        _marcar_falhas(it.get("url"), "troc")
+        _marcar_falhas(it.get("_altv") or it.get("url"), "troc")
     dev_log("alternativa", "%s: %s" % ((it.get("titulo") or "")[:60], novo or "nenhuma"))
     salvar_fila()
     return bool(novo)
