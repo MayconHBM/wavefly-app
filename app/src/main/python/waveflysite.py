@@ -297,7 +297,7 @@ def obter_info(url, alt=0, cook=False):
         ultimo = None
         for c in CLIENTES_CONTA:     # com a conta: um cliente por vez (os que aceitam cookies), até algum devolver o áudio
             try:
-                with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": c}})) as ydl:
+                with yt_dlp.YoutubeDL(dict(base_opts, extractor_args={"youtube": {"player_client": c, "formats": ["missing_pot"]}})) as ydl:
                     info = ydl.extract_info(url, download=False)
                     base = _nome_base(ydl, info)
                 dev_log("idade", "cliente %s funcionou" % "+".join(c))
