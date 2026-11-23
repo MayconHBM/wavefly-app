@@ -1809,22 +1809,23 @@ def _abrevia(p):
     return p[0] + re.sub(r"[aeiouAEIOU]", "", p[1:]) if len(p) > 2 else p
 
 
-def buscar_alternativa(it):
+def buscar_alternativas(it):
     """Procura outra versão do mesmo vídeo: título parecido e duração parecida. Devolve o endereço ou None."""
     titulo = (it.get("titulo") or "").strip()
     m = re.search(r"([\w-]{11})(?:[&?#]|$)", it.get("url", ""))
     vid0 = m.group(1) if m else ""
     if len(titulo) < 2 or titulo.startswith("http"):
-        return None
+        return []
     canal = re.sub(r"\s*(-\s*topic|vevo|official)\s*$", "", (TIT_CACHE.get(vid0) or {}).get("canal", ""), flags=re.I).strip()
     d0 = it.get("dur") or DURS.get(chave(it.get("url", ""))) or 0
     a = set(_palavras(titulo))
     if not a:
-        return None
+        return []
     art = set(_palavras(canal))
     curto = len(a) <= 2
 
     rejeitados = []
+    aceitos = []
     total_vistos = [0]
 
     def procurar(consulta, minimo):
@@ -1856,6 +1857,7 @@ def buscar_alternativa(it):
                 rejeitados.append((cob, "%s -> falta o artista" % desc))
                 continue            # título curto ("Hello", "Vogue"): exige o artista também
             n = cob - (abs(c - d0) / d0 if (d0 and c) else 0) - 0.02 * max(0, len(set(_palavras(t))) - len(a))
+            aceitos.append((n, e["id"]))
             if n > nota:
                 melhor, nota = e["id"], n
         return melhor
@@ -1885,7 +1887,18 @@ def buscar_alternativa(it):
             dev_log("alternativa", "descartados (a busca trouxe %d vídeos): " % total_vistos[0] + (" | ".join(linhas[:4]) if linhas else "nenhum além do próprio"))
         except Exception:
             pass
-    return ("https://www.youtube.com/watch?v=" + melhor) if melhor else None
+    ordem, vistos_a = [], set()
+    for n, v in sorted(aceitos, key=lambda x: -x[0]):
+        if v not in vistos_a:
+            vistos_a.add(v); ordem.append(v)
+    if melhor and melhor in ordem:      # o escolhido por último (busca com mais critério) vem primeiro
+        ordem.remove(melhor); ordem.insert(0, melhor)
+    return ["https://www.youtube.com/watch?v=" + v for v in ordem[:3]]
+
+
+def buscar_alternativa(it):
+    r = buscar_alternativas(it)
+    return r[0] if r else None
 
 
 ALT_SEM = threading.Semaphore(3)      # no máximo 3 buscas ao mesmo tempo (o celular não engasga)
@@ -1895,11 +1908,13 @@ def tentar_alternativa(it, auto=False):
     """Troca o endereço pelo da versão alternativa e recoloca na fila. Se não achar, fica como falha."""
     try:
         with ALT_SEM:
-            novo = buscar_alternativa(it)
+            lista = buscar_alternativas(it)
     except Exception:
-        novo = None
+        lista = []
+    novo = lista[0] if lista else None
     with LOCK:
         if novo and not it.get("_altv"):
+            it["_alts_rest"] = lista[1:]       # reservas: se esta também falhar (ex.: outra cópia com restrição de idade), tenta a próxima
             it.update(_altv=it.get("url", ""), url=novo, status="fila", pct=0, vel="Versão alternativa", erro="", _tent=0, _alt=0,
                       _cook=False, _nao_antes=0, cancel=False, auto=True, _podealt=False)
         else:
@@ -1975,6 +1990,19 @@ def tratar_falha(it, erro):
             it.update(status="fila", pct=0, vel="Tentando de novo (%d/4)" % tent + (" · em %d s" % atraso if atraso else ""), erro="")
         dev_log("tentativa", "%s (%d/4): %s" % (nome, tent, erro[:150]))
         return bloqueio
+    if permanente and not bloqueio and it.get("_altv") and it.get("_alts_rest"):
+        prox = it["_alts_rest"].pop(0)
+        velho = it.get("url", "")
+        with LOCK:
+            it.update(url=prox, status="fila", pct=0, vel="Outra versão alternativa", erro="", _tent=0, _alt=0,
+                      _cook=False, _nao_antes=0, cancel=False, auto=True, _podealt=False)
+        with DEV_LOCK:
+            DEV["trocadas"].append({"t": time.strftime("%H:%M:%S"), "titulo": (it.get("titulo") or "")[:80], "de": velho, "para": prox})
+            del DEV["trocadas"][:-300]
+        _marcar_falhas(velho, "troc")
+        dev_log("alternativa", "%s: a cópia anterior também falhou, tentando outra (%d reserva(s) depois dessa)" % (nome, len(it["_alts_rest"])))
+        salvar_fila()
+        return False
     if permanente and not bloqueio and not it.get("_altv"):
         if CFG.get("alt") == "auto":
             if tentar_alternativa(it, auto=True):
