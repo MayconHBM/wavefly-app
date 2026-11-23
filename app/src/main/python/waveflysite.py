@@ -930,7 +930,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
                 res["rep"] += 1
                 # sem nome - front mostra só a contagem
                 continue
-            if re.fullmatch(r"[\w-]{11}", k) and ja_existe(k, pasta=raiz(), sub=""):
+            if re.fullmatch(r"[\w-]{11}", k) and ja_existe(k, pasta=raiz(), sub=sub):
                 res["ja"] += 1
                 # sem nome - front mostra só a contagem
                 continue
