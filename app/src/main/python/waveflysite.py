@@ -13,6 +13,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
+import palavroes
 from urllib.parse import parse_qs, quote_plus, urlparse
 
 try:
@@ -1818,16 +1819,8 @@ _RUIDO = {"remastered", "remaster", "remasterizado", "official", "audio", "video
 
 
 def _palavras(t):
-    w = re.findall(r"[a-z0-9]+", _sem_acento(t or "").lower())
+    w = re.findall(r"[a-z0-9]+", palavroes.desmascarar(t or ""))     # "F**k"/"fck" viram "fuck": títulos censurados comparam certo
     return [x for x in w if x not in _RUIDO and not re.fullmatch(r"(19|20)\d\d", x)]
-
-
-_PALAVROES = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt|dick|pussy|asshole|bastard|porra|caralho|merda|puta|foda\w*|cacete|buceta|viado|cu)\b", re.I)
-
-
-def _abrevia(p):
-    """fuck -> fck, shit -> sht (como as pessoas digitam para a busca não esconder o resultado)."""
-    return p[0] + re.sub(r"[aeiouAEIOU]", "", p[1:]) if len(p) > 2 else p
 
 
 def buscar_alternativas(it):
@@ -1890,12 +1883,12 @@ def buscar_alternativas(it):
         p = [x for x in _palavras(titulo)][:5]
         if len(p) >= 2 or (p and art):
             melhor = procurar(" ".join(sorted(art)[:3] + p), 0.75 if d0 else 0.7)
-    if not melhor and _PALAVROES.search(titulo + " " + canal):
+    base_q = " ".join(dict.fromkeys((canal + " " + " ".join(_palavras(titulo)[:5])).lower().split()))
+    if not melhor and palavroes.tem_palavrao(titulo + " " + canal):
         # A busca do YouTube costuma esconder resultados quando a consulta tem palavrão ("fuck forever" volta quase nada,
-        # "fck forever" volta tudo). Tenta de novo com a palavra abreviada (sem vogais) e depois sem ela.
-        base_q = " ".join(dict.fromkeys((canal + " " + " ".join(_palavras(titulo)[:5])).lower().split()))
-        for q in (_PALAVROES.sub(lambda m: _abrevia(m.group(0)), base_q), _PALAVROES.sub(" ", base_q)):
-            melhor = procurar(" ".join(q.split()), 0.75 if d0 else 0.7)
+        # "fck forever" volta tudo). Tenta com a palavra abreviada, com asterisco e, por fim, sem ela (veja palavroes.py).
+        for q in palavroes.variantes(base_q):
+            melhor = procurar(q, 0.75 if d0 else 0.7)
             if melhor:
                 dev_log("alternativa", "achada com a busca sem o palavrão: %s" % q[:60])
                 break
