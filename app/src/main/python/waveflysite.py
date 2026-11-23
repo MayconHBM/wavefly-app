@@ -898,7 +898,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
     with LOCK:
         if not any(i["status"] in ("fila", "baixando") for i in ITENS):
             nova_sessao()
-        ativos = {chave(i["url"]) for i in ITENS if i["status"] in ("fila", "baixando")}
+        ativos = {(chave(i["url"]), i.get("sub") or "") for i in ITENS if i["status"] in ("fila", "baixando")}
     
     for l in links:
         if GEN[0] != g0:
@@ -926,7 +926,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
             if GEN[0] != g0:
                 break
             k = chave(u)
-            if k in ativos:
+            if (k, sub) in ativos:
                 res["rep"] += 1
                 # sem nome - front mostra só a contagem
                 continue
@@ -934,7 +934,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
                 res["ja"] += 1
                 # sem nome - front mostra só a contagem
                 continue
-            ativos.add(k)
+            ativos.add((k, sub))
             novo_item(u, sub, titulo=(titulos or {}).get(u) or (titulos or {}).get(chave(u)) or (TIT_CACHE.get(chave(u)) or {}).get('titulo') or '')
             res["add"] += 1
             
@@ -948,7 +948,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
         for vid in ids:
             if GEN[0] != g0:
                 break
-            if vid in ativos:
+            if (vid, sub) in ativos:
                 res["rep"] += 1
                 # sem nome
                 continue
@@ -956,7 +956,7 @@ def adicionar(texto, modo, de=None, ate=None, listas=None, titulos=None):
                 res["ja"] += 1
                 # sem nome
                 continue
-            ativos.add(vid)
+            ativos.add((vid, sub))
             novo_item("https://www.youtube.com/watch?v=" + vid, sub, titulo=(titulos or {}).get(vid) or (titulos or {}).get("https://www.youtube.com/watch?v=" + vid) or (TIT_CACHE.get(vid) or {}).get("titulo") or "")
             res["add"] += 1
     salvar_fila()
