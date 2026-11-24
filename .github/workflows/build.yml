@@ -132,3 +132,20 @@ jobs:
               --title "WaveFly YT TESTE #${{ github.run_number }} (${GITHUB_REF_NAME})" \
               --notes "APK de teste da branch ${GITHUB_REF_NAME}. Ainda não está na main."
           fi
+
+      - name: Limpar testes antigos (mantém só os 3 mais recentes)
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # só pré-lançamentos cujo nome começa com "teste-"; as versões oficiais (v1.0.x) nunca entram
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+            --jq '.[] | select(.prerelease==true and (.tag_name|test("^teste-[0-9]+$"))) | [.created_at,.id,.tag_name] | @tsv' \
+            | sort -r | tail -n +4 > apagar.tsv || true
+          echo "Testes a apagar: $(wc -l < apagar.tsv)"
+          while IFS=$'\t' read -r _data id tag; do
+            [ -z "$tag" ] && continue
+            echo "apagando $tag"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}" || true
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" || true
+          done < apagar.tsv
